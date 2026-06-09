@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { messageSmtpConfigured, sendOutboundEmail } from "@/lib/email";
 
+const DEFAULT_BACKEND_URL = "https://raheemakhter-leadspipeline.hf.space";
+
 export async function POST(request: Request) {
   const body = (await request.json()) as { body?: string; subject?: string; to?: string };
 
@@ -33,7 +35,7 @@ export async function POST(request: Request) {
 }
 
 async function proxyToBackend(body: { body: string; subject: string; to: string }) {
-  const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL;
+  const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || DEFAULT_BACKEND_URL;
 
   if (!backendUrl) {
     return NextResponse.json({ error: "Message SMTP is not configured and BACKEND_URL is missing." }, { status: 500 });
