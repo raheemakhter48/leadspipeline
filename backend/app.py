@@ -1,7 +1,7 @@
 import json
 import os
-import smtplib
 import socket
+import smtplib
 from email.message import EmailMessage
 from typing import Any
 
@@ -68,7 +68,8 @@ def mail_send(payload: SendMailRequest) -> dict[str, bool]:
         raise HTTPException(status_code=500, detail="Message SMTP is not configured.")
 
     message = EmailMessage()
-    message["From"] = os.getenv("MESSAGE_SMTP_FROM") or os.getenv("MESSAGE_SMTP_USER")
+    sender_email = os.getenv("MESSAGE_SMTP_FROM") or os.getenv("MESSAGE_SMTP_USER", "")
+    message["From"] = f"LeadsPipeline <{sender_email}>"
     message["To"] = payload.to
     message["Subject"] = payload.subject
     message.set_content(payload.body)
@@ -76,28 +77,42 @@ def mail_send(payload: SendMailRequest) -> dict[str, bool]:
     host = os.getenv("MESSAGE_SMTP_HOST", "")
     port = int(os.getenv("MESSAGE_SMTP_PORT", "587"))
     secure = os.getenv("MESSAGE_SMTP_SECURE", "false").lower() == "true"
+    user = os.getenv("MESSAGE_SMTP_USER", "")
+    password = os.getenv("MESSAGE_SMTP_PASS", "")
 
     try:
         if secure:
+            print(f"[mail] connecting SMTP_SSL {host}:{port}", flush=True)
             server = smtplib.SMTP_SSL(host, port, timeout=10)
         else:
-            server = smtplib.SMTP(host, port, timeout=10)
-        if not secure:
+            print(f"[mail] connecting SMTP STARTTLS {host}:{port}", flush=True)
+            server = smtplib.SMTP(host, port, timeout=20)
+            server.ehlo()
             server.starttls()
-        server.login(os.getenv("MESSAGE_SMTP_USER", ""), os.getenv("MESSAGE_SMTP_PASS", ""))
+            server.ehlo()
+        if not secure:
+            print("[mail] STARTTLS enabled", flush=True)
+        server.login(user, password)
         server.send_message(message)
     except (TimeoutError, socket.timeout) as exc:
         raise HTTPException(
             status_code=504,
-            detail=f"SMTP connection timed out for {host}:{port}. Try port 587 with MESSAGE_SMTP_SECURE=false, or use an email API provider.",
+            detail=f"SMTP connection timed out for {host}:{port}. Hugging Face network IP may be blocked by the SMTP provider.",
         ) from exc
     except smtplib.SMTPAuthenticationError as exc:
         raise HTTPException(status_code=401, detail="SMTP authentication failed. Check MESSAGE_SMTP_USER and MESSAGE_SMTP_PASS.") from exc
+    except smtplib.SMTPConnectError as exc:
+        raise HTTPException(status_code=502, detail=f"SMTP connection failed: {exc}") from exc
     except smtplib.SMTPException as exc:
         raise HTTPException(status_code=502, detail=f"SMTP send failed: {exc}") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=502, detail=f"SMTP network error: {exc}") from exc
     finally:
         if "server" in locals():
-            server.quit()
+            try:
+                server.quit()
+            except Exception:
+                pass
 
     return {"ok": True}
 
