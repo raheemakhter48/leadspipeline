@@ -8,16 +8,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "To, subject, and body are required." }, { status: 400 });
   }
 
+  const payload = {
+    body: body.body,
+    subject: body.subject,
+    to: body.to,
+  };
+
   if (!messageSmtpConfigured()) {
-    return proxyToBackend(body);
+    return proxyToBackend(payload);
   }
 
   try {
-    const result = await sendOutboundEmail({
-      body: body.body,
-      subject: body.subject,
-      to: body.to,
-    });
+    const result = await sendOutboundEmail(payload);
 
     if (!result.sent) {
       return NextResponse.json({ error: result.error ?? "Email send failed." }, { status: 500 });
