@@ -1,6 +1,7 @@
 import json
 import os
 import smtplib
+import socket
 from email.message import EmailMessage
 from typing import Any
 
@@ -76,18 +77,27 @@ def mail_send(payload: SendMailRequest) -> dict[str, bool]:
     port = int(os.getenv("MESSAGE_SMTP_PORT", "587"))
     secure = os.getenv("MESSAGE_SMTP_SECURE", "false").lower() == "true"
 
-    if secure:
-      server = smtplib.SMTP_SSL(host, port, timeout=10)
-    else:
-      server = smtplib.SMTP(host, port, timeout=10)
-
     try:
+        if secure:
+            server = smtplib.SMTP_SSL(host, port, timeout=10)
+        else:
+            server = smtplib.SMTP(host, port, timeout=10)
         if not secure:
             server.starttls()
         server.login(os.getenv("MESSAGE_SMTP_USER", ""), os.getenv("MESSAGE_SMTP_PASS", ""))
         server.send_message(message)
+    except (TimeoutError, socket.timeout) as exc:
+        raise HTTPException(
+            status_code=504,
+            detail=f"SMTP connection timed out for {host}:{port}. Try port 587 with MESSAGE_SMTP_SECURE=false, or use an email API provider.",
+        ) from exc
+    except smtplib.SMTPAuthenticationError as exc:
+        raise HTTPException(status_code=401, detail="SMTP authentication failed. Check MESSAGE_SMTP_USER and MESSAGE_SMTP_PASS.") from exc
+    except smtplib.SMTPException as exc:
+        raise HTTPException(status_code=502, detail=f"SMTP send failed: {exc}") from exc
     finally:
-        server.quit()
+        if "server" in locals():
+            server.quit()
 
     return {"ok": True}
 

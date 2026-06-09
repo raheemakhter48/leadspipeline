@@ -78,6 +78,7 @@ export function ContactsWorkspace({ leads }: { leads: Lead[] }) {
 export function MessagesWorkspace({
   campaigns,
   composer,
+  debugMessage,
   leads,
   loading,
   messageSubject,
@@ -106,6 +107,7 @@ export function MessagesWorkspace({
 }: {
   campaigns: Campaign[];
   composer: string;
+  debugMessage: string;
   leads: Lead[];
   loading: boolean;
   messageSubject: string;
@@ -267,6 +269,7 @@ export function MessagesWorkspace({
           </button>
         </div>
         <p className="mt-3 text-xs text-[#65605a]">Messages are sent through the message SMTP configured in the server environment.</p>
+        {debugMessage && <p className="mt-3 rounded-md bg-red-50 p-3 text-xs text-red-700">{debugMessage}</p>}
       </div>
       <div className="grid min-h-0 min-w-0 gap-4">
         <div className="rounded-md border border-black/10 bg-white shadow-sm">

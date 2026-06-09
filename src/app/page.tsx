@@ -56,6 +56,7 @@ export default function Home() {
   const [messageTemplate, setMessageTemplate] = useState("");
   const [messageQueueLoading, setMessageQueueLoading] = useState(false);
   const [messageNotice, setMessageNotice] = useState("");
+  const [messageDebug, setMessageDebug] = useState("");
   const [googleConnected, setGoogleConnected] = useState(false);
   const [googleConnectLoading, setGoogleConnectLoading] = useState(false);
   const [sentMessages, setSentMessages] = useState<MessageQueueItem[]>([]);
@@ -474,7 +475,9 @@ export default function Home() {
       );
       if (!response.ok) {
         const payload = await response.json();
-        setMessage(payload.error ?? "Email send failed.");
+        const errorMessage = payload.error ?? payload.detail ?? "Email send failed.";
+        setMessage(errorMessage);
+        setMessageDebug(`Send failed for ${item.to}: ${errorMessage}`);
         break;
       }
     }
@@ -484,6 +487,7 @@ export default function Home() {
     setMessageQueueLoading(false);
     if (sentCount === outgoing.length) {
       setMessage(`${sentCount} emails sent.`);
+      setMessageDebug("");
       showMessageNotice("Mail sent successfully.");
     }
   }
@@ -557,7 +561,9 @@ export default function Home() {
     const response = await sendEmailRequest(queued);
     const payload = await response.json();
     setSentMessages((current) => current.map((item) => (item.id === messageId ? { ...item, status: response.ok ? "sent" : "failed" } : item)));
-    setMessage(response.ok ? `Email sent to ${queued.to}.` : payload.error ?? "Email send failed.");
+    const errorMessage = payload.error ?? payload.detail ?? "Email send failed.";
+    setMessage(response.ok ? `Email sent to ${queued.to}.` : errorMessage);
+    setMessageDebug(response.ok ? "" : `Send failed for ${queued.to}: ${errorMessage}`);
     if (response.ok) showMessageNotice("Mail sent successfully.");
   }
 
@@ -566,13 +572,19 @@ export default function Home() {
     const timeout = window.setTimeout(() => controller.abort(), 18000);
 
     try {
-      return await apiFetch("/api/google/send", {
+      console.info("[mail] sending", { to: item.to, subject: item.subject });
+      const response = await apiFetch("/api/google/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ body: item.body, subject: item.subject, to: item.to }),
         signal: controller.signal,
       });
+      const cloned = response.clone();
+      const responseText = await cloned.text().catch(() => "");
+      console.info("[mail] response", { body: responseText, ok: response.ok, status: response.status, to: item.to });
+      return response;
     } catch (error) {
+      console.error("[mail] request failed", error);
       return Response.json(
         { error: error instanceof DOMException && error.name === "AbortError" ? "Email send timed out. Check SMTP or try again." : "Email send failed." },
         { status: 504 },
@@ -814,6 +826,7 @@ export default function Home() {
               selectedCampaignId={selectedCampaignId}
               selectedRecipientIds={selectedRecipientIds}
               sentMessages={sentMessages}
+              debugMessage={messageDebug}
               setComposer={setComposer}
               setMessageSubject={setMessageSubject}
               setSelectedRecipientIds={setSelectedRecipientIds}

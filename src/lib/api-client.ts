@@ -12,8 +12,11 @@ export function apiFetch(path: string, init?: RequestInit) {
   const mappedPath = backendRouteMap[path];
 
   if (!mappedPath) {
+    console.info("[apiFetch] local", { path });
     return fetch(path, init);
   }
 
-  return fetch(`${backendUrl}${mappedPath}`, init);
+  const url = `${backendUrl}${mappedPath}`;
+  console.info("[apiFetch] backend", { path, url });
+  return fetch(url, init);
 }

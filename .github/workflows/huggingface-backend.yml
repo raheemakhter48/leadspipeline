@@ -1,6 +1,12 @@
 name: Deploy backend to Hugging Face Space
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - ".github/workflows/huggingface-backend.yml"
   workflow_dispatch:
     inputs:
       backend_path:
