@@ -1,0 +1,31 @@
+# LeadsPipeline Backend
+
+Docker backend for Hugging Face Spaces.
+
+## Endpoints
+
+- `GET /health`
+- `GET /mail/status`
+- `POST /mail/send`
+- `POST /messages/tailor`
+- `POST /ai/intel`
+
+## Hugging Face Space secrets
+
+Set these in Space settings:
+
+- `ALLOWED_ORIGINS`
+- `GROQ_API_KEY`
+- `GROQ_MODEL`
+- `MESSAGE_SMTP_HOST`
+- `MESSAGE_SMTP_PORT`
+- `MESSAGE_SMTP_SECURE`
+- `MESSAGE_SMTP_USER`
+- `MESSAGE_SMTP_PASS`
+- `MESSAGE_SMTP_FROM`
+
+Example `ALLOWED_ORIGINS`:
+
+```text
+https://your-vercel-app.vercel.app,http://localhost:3000
+```

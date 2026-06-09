@@ -1,0 +1,270 @@
+import json
+import os
+import smtplib
+from email.message import EmailMessage
+from typing import Any
+
+import requests
+from bs4 import BeautifulSoup
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, EmailStr
+
+
+app = FastAPI(title="LeadsPipeline Backend", version="0.1.0")
+
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "*").split(",")
+    if origin.strip()
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins if allowed_origins != ["*"] else ["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+class TailorRequest(BaseModel):
+    body: str
+    instruction: str
+    subject: str
+
+
+class AiIntelRequest(BaseModel):
+    company: str | None = ""
+    prompt: str | None = ""
+    website: str | None = ""
+
+
+class SendMailRequest(BaseModel):
+    body: str
+    subject: str
+    to: EmailStr
+
+
+@app.get("/")
+def root() -> dict[str, str]:
+    return {"ok": "true", "service": "LeadsPipeline backend"}
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/mail/status")
+def mail_status() -> dict[str, bool]:
+    return {"configured": message_smtp_configured()}
+
+
+@app.post("/mail/send")
+def mail_send(payload: SendMailRequest) -> dict[str, bool]:
+    if not message_smtp_configured():
+        raise HTTPException(status_code=500, detail="Message SMTP is not configured.")
+
+    message = EmailMessage()
+    message["From"] = os.getenv("MESSAGE_SMTP_FROM") or os.getenv("MESSAGE_SMTP_USER")
+    message["To"] = payload.to
+    message["Subject"] = payload.subject
+    message.set_content(payload.body)
+
+    host = os.getenv("MESSAGE_SMTP_HOST", "")
+    port = int(os.getenv("MESSAGE_SMTP_PORT", "587"))
+    secure = os.getenv("MESSAGE_SMTP_SECURE", "false").lower() == "true"
+
+    if secure:
+      server = smtplib.SMTP_SSL(host, port, timeout=30)
+    else:
+      server = smtplib.SMTP(host, port, timeout=30)
+
+    try:
+        if not secure:
+            server.starttls()
+        server.login(os.getenv("MESSAGE_SMTP_USER", ""), os.getenv("MESSAGE_SMTP_PASS", ""))
+        server.send_message(message)
+    finally:
+        server.quit()
+
+    return {"ok": True}
+
+
+@app.post("/messages/tailor")
+def tailor_message(payload: TailorRequest) -> dict[str, str]:
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        return {
+            "subject": payload.subject,
+            "body": local_tailor(payload.body, payload.instruction),
+            "warning": "GROQ_API_KEY is not configured. Used local tailoring.",
+        }
+
+    result = groq_json(
+        [
+            {
+                "role": "system",
+                "content": "Return strict JSON only with subject and body. Rewrite B2B outreach emails. Keep placeholders when useful.",
+            },
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "current": {"body": payload.body, "subject": payload.subject},
+                        "instruction": payload.instruction,
+                        "requiredShape": {"subject": "string", "body": "string"},
+                    }
+                ),
+            },
+        ]
+    )
+
+    return {
+        "subject": str(result.get("subject") or payload.subject),
+        "body": str(result.get("body") or local_tailor(payload.body, payload.instruction)),
+    }
+
+
+@app.post("/ai/intel")
+def ai_intel(payload: AiIntelRequest) -> dict[str, Any]:
+    company = (payload.company or "the company").strip()
+    prompt = (payload.prompt or "Find company intel and write a B2B outreach email.").strip()
+    website = normalize_url(payload.website or "")
+    website_text = scrape_website_text(website) if website else ""
+
+    api_key = os.getenv("GROQ_API_KEY")
+    fallback = local_intel(company, website, prompt, website_text)
+    if not api_key:
+        return {**fallback, "warning": "GROQ_API_KEY is not configured. Used local AI fallback."}
+
+    result = groq_json(
+        [
+            {
+                "role": "system",
+                "content": (
+                    "Return strict JSON only. Create concise B2B company intel and an outreach email. "
+                    "Use only provided website text and user prompt. Do not invent private facts."
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "company": company,
+                        "prompt": prompt,
+                        "website": website,
+                        "websiteText": website_text,
+                        "requiredShape": {
+                            "companyIntel": ["string"],
+                            "outreachAngles": ["string"],
+                            "subject": "string",
+                            "body": "string",
+                        },
+                    }
+                ),
+            },
+        ]
+    )
+
+    return {
+        "companyIntel": normalize_list(result.get("companyIntel")) or fallback["companyIntel"],
+        "outreachAngles": normalize_list(result.get("outreachAngles")) or fallback["outreachAngles"],
+        "subject": str(result.get("subject") or fallback["subject"]),
+        "body": str(result.get("body") or fallback["body"]),
+    }
+
+
+def message_smtp_configured() -> bool:
+    return bool(
+        os.getenv("MESSAGE_SMTP_HOST")
+        and os.getenv("MESSAGE_SMTP_USER")
+        and os.getenv("MESSAGE_SMTP_PASS")
+    )
+
+
+def groq_json(messages: list[dict[str, str]]) -> dict[str, Any]:
+    response = requests.post(
+        "https://api.groq.com/openai/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {os.getenv('GROQ_API_KEY')}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+            "temperature": 0.3,
+            "response_format": {"type": "json_object"},
+            "messages": messages,
+        },
+        timeout=45,
+    )
+    response.raise_for_status()
+    content = response.json().get("choices", [{}])[0].get("message", {}).get("content", "{}")
+    return json.loads(content)
+
+
+def scrape_website_text(website: str) -> str:
+    try:
+        response = requests.get(
+            website,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; LeadsPipeline/0.1)"},
+            timeout=6,
+        )
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+        for tag in soup(["script", "style", "noscript"]):
+            tag.decompose()
+        return " ".join(soup.get_text(" ").split())[:4500]
+    except Exception:
+        return ""
+
+
+def local_tailor(message: str, instruction: str) -> str:
+    lower = instruction.lower()
+    if "short" in lower:
+        return ". ".join([part for part in message.split(".") if part][:2]).strip() + "."
+    if "warm" in lower:
+        return f"{message}\n\nHappy to send a quick, no-pressure breakdown if it helps."
+    if "formal" in lower:
+        return message.replace("Hi ", "Hello ").replace("I can help", "I would like to help")
+    return f"{message}\n\nContext: {instruction}"
+
+
+def local_intel(company: str, website: str, prompt: str, website_text: str) -> dict[str, Any]:
+    source = "website content" if website_text else "your prompt"
+    return {
+        "companyIntel": [
+            f"{company} context is based on {source}.",
+            f"Website reviewed: {website}" if website else "No website was provided.",
+            "Use a practical, low-pressure outreach angle instead of broad claims.",
+        ],
+        "outreachAngles": [
+            "Offer a quick audit or growth idea.",
+            "Reference their current website or category.",
+            "Keep the first email short and easy to reply to.",
+        ],
+        "subject": f"Quick idea for {company}",
+        "body": (
+            "Hi {{name}},\n\n"
+            f"I reviewed {website or '{{website}}'} and noticed a few places where {{{{company}}}} could make the customer journey clearer.\n\n"
+            f"One practical angle is: {prompt}\n\n"
+            "If useful, I can send a short breakdown with 2-3 improvements for {{company}}.\n\n"
+            "Best,\n{{email}}"
+        ),
+    }
+
+
+def normalize_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if str(item).strip()][:6]
+
+
+def normalize_url(value: str) -> str:
+    value = value.strip()
+    if not value:
+        return ""
+    if value.startswith("http://") or value.startswith("https://"):
+        return value
+    return f"https://{value}"

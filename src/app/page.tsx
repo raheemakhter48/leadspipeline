@@ -17,6 +17,7 @@ import {
 import type { QuickSearch, ReadyHistoryItem, TabId } from "@/lib/app-types";
 import { defaultRegion } from "@/lib/locations";
 import { messageTemplates } from "@/lib/message-templates";
+import { apiFetch } from "@/lib/api-client";
 import type { AuthUser } from "@/lib/auth-db";
 import type { Campaign, Lead } from "@/lib/types";
 
@@ -97,7 +98,7 @@ export default function Home() {
       const campaignPayload = await campaignResponse.json();
       setSavedLeads(leadPayload.leads ?? []);
       setCampaigns(campaignPayload.campaigns ?? []);
-      const mailResponse = await fetch("/api/mail/status");
+      const mailResponse = await apiFetch("/api/mail/status");
       const mailPayload = await mailResponse.json();
       setGoogleConnected(Boolean(mailPayload.configured));
     }
@@ -466,7 +467,7 @@ export default function Home() {
     let sentCount = 0;
 
     for (const item of outgoing) {
-      const response = await fetch("/api/google/send", {
+      const response = await apiFetch("/api/google/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ body: item.body, subject: item.subject, to: item.to }),
@@ -499,7 +500,7 @@ export default function Home() {
     }
     setMessageQueueLoading(true);
     try {
-      const response = await fetch("/api/messages/tailor", {
+      const response = await apiFetch("/api/messages/tailor", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ body: composer, instruction: input, subject: messageSubject }),
@@ -526,7 +527,7 @@ export default function Home() {
     setAiLoading(true);
     setMessage("AI is researching company intel...");
     try {
-      const response = await fetch("/api/ai/intel", {
+      const response = await apiFetch("/api/ai/intel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ company: aiCompany, prompt: aiPrompt, website: aiWebsite }),
@@ -557,7 +558,7 @@ export default function Home() {
     if (!queued) return;
 
     setSentMessages((current) => current.map((item) => (item.id === messageId ? { ...item, status: "sending" } : item)));
-    const response = await fetch("/api/google/send", {
+    const response = await apiFetch("/api/google/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ body: queued.body, subject: queued.subject, to: queued.to }),
@@ -572,7 +573,7 @@ export default function Home() {
     setGoogleConnectLoading(true);
     setMessage("Checking message SMTP...");
     try {
-      const response = await fetch("/api/mail/status");
+      const response = await apiFetch("/api/mail/status");
       const payload = await response.json();
       setGoogleConnected(Boolean(payload.configured));
       setMessage(payload.configured ? "Message SMTP is ready." : "Message SMTP is not configured.");

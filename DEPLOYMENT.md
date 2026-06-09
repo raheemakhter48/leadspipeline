@@ -9,7 +9,7 @@ This project is a Next.js app. The UI and API routes live in the same app:
 
 Deploying to Vercel will run both frontend and API routes together.
 
-If the backend must run on Hugging Face, split the API routes into a separate backend service first, then deploy that backend folder with the Hugging Face workflow.
+The `backend` folder contains a Docker/FastAPI backend for Hugging Face Spaces. It currently supports AI intel, message tailoring, SMTP status, and outbound email sending.
 
 ## Vercel frontend/fullstack deploy
 
@@ -20,6 +20,16 @@ Add these GitHub repository secrets:
 - `VERCEL_PROJECT_ID`
 
 Add the app environment variables in Vercel Project Settings. Do not commit `.env.local`.
+
+If you want Vercel frontend to call the Hugging Face backend, set:
+
+- `NEXT_PUBLIC_BACKEND_URL`
+
+Example:
+
+```text
+https://raheemakhter-leadspipeline.hf.space
+```
 
 The workflow is:
 
@@ -46,12 +56,31 @@ The workflow is:
 
 It is manual-only. It uploads the folder selected in `backend_path`, defaulting to `backend`.
 
+Set these secrets in the Hugging Face Space settings:
+
+- `ALLOWED_ORIGINS`
+- `GROQ_API_KEY`
+- `GROQ_MODEL`
+- `MESSAGE_SMTP_HOST`
+- `MESSAGE_SMTP_PORT`
+- `MESSAGE_SMTP_SECURE`
+- `MESSAGE_SMTP_USER`
+- `MESSAGE_SMTP_PASS`
+- `MESSAGE_SMTP_FROM`
+
 ## Backend split checklist
 
-Before using Hugging Face as backend:
+The current Hugging Face backend already supports:
 
-1. Move API logic from `src/app/api/**` into a separate `backend` folder.
-2. Expose the backend with HTTP endpoints.
-3. Add a Dockerfile or Hugging Face Space app file in `backend`.
-4. Change frontend fetch calls from `/api/...` to `NEXT_PUBLIC_API_URL + "/..."`.
-5. Add backend secrets in Hugging Face Space settings.
+- AI company intel
+- AI message tailoring
+- SMTP status
+- SMTP email sending
+
+These routes still run inside the Next.js/Vercel app unless you split them later:
+
+- Auth/login/OTP
+- Saved leads
+- Campaigns
+- Ready-to-buy lead scraping
+- CSV export
