@@ -5,11 +5,13 @@ const backendRouteMap: Record<string, string> = {
   "/api/messages/tailor": "/messages/tailor",
 };
 
+const DEFAULT_BACKEND_URL = "https://raheemakhter-leadspipeline.hf.space";
+
 export function apiFetch(path: string, init?: RequestInit) {
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+  const backendUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || DEFAULT_BACKEND_URL).replace(/\/$/, "");
   const mappedPath = backendRouteMap[path];
 
-  if (!backendUrl || !mappedPath) {
+  if (!mappedPath) {
     return fetch(path, init);
   }
 

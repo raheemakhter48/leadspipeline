@@ -467,11 +467,7 @@ export default function Home() {
     let sentCount = 0;
 
     for (const item of outgoing) {
-      const response = await apiFetch("/api/google/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: item.body, subject: item.subject, to: item.to }),
-      });
+      const response = await sendEmailRequest(item);
       sentCount += response.ok ? 1 : 0;
       setSentMessages((current) =>
         current.map((queued) => (queued.id === item.id ? { ...queued, status: response.ok ? "sent" : "failed" } : queued)),
@@ -558,15 +554,32 @@ export default function Home() {
     if (!queued) return;
 
     setSentMessages((current) => current.map((item) => (item.id === messageId ? { ...item, status: "sending" } : item)));
-    const response = await apiFetch("/api/google/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ body: queued.body, subject: queued.subject, to: queued.to }),
-    });
+    const response = await sendEmailRequest(queued);
     const payload = await response.json();
     setSentMessages((current) => current.map((item) => (item.id === messageId ? { ...item, status: response.ok ? "sent" : "failed" } : item)));
     setMessage(response.ok ? `Email sent to ${queued.to}.` : payload.error ?? "Email send failed.");
     if (response.ok) showMessageNotice("Mail sent successfully.");
+  }
+
+  async function sendEmailRequest(item: Pick<MessageQueueItem, "body" | "subject" | "to">) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 18000);
+
+    try {
+      return await apiFetch("/api/google/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: item.body, subject: item.subject, to: item.to }),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      return Response.json(
+        { error: error instanceof DOMException && error.name === "AbortError" ? "Email send timed out. Check SMTP or try again." : "Email send failed." },
+        { status: 504 },
+      );
+    } finally {
+      window.clearTimeout(timeout);
+    }
   }
 
   async function connectGoogle() {

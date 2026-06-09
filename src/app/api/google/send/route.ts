@@ -42,12 +42,16 @@ async function proxyToBackend(body: { body: string; subject: string; to: string 
   }
 
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 16000);
     const response = await fetch(`${backendUrl.replace(/\/$/, "")}/mail/send`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       cache: "no-store",
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
 
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -56,7 +60,7 @@ async function proxyToBackend(body: { body: string; subject: string; to: string 
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Backend email send failed.";
+    const message = error instanceof Error && error.name === "AbortError" ? "Backend email send timed out." : error instanceof Error ? error.message : "Backend email send failed.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

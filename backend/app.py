@@ -77,9 +77,9 @@ def mail_send(payload: SendMailRequest) -> dict[str, bool]:
     secure = os.getenv("MESSAGE_SMTP_SECURE", "false").lower() == "true"
 
     if secure:
-      server = smtplib.SMTP_SSL(host, port, timeout=30)
+      server = smtplib.SMTP_SSL(host, port, timeout=10)
     else:
-      server = smtplib.SMTP(host, port, timeout=30)
+      server = smtplib.SMTP(host, port, timeout=10)
 
     try:
         if not secure:
