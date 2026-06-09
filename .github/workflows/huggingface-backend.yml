@@ -17,6 +17,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      BACKEND_PATH: ${{ github.event.inputs.backend_path || 'backend' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,8 +41,8 @@ jobs:
 
       - name: Validate backend folder
         run: |
-          if [ ! -d "${{ inputs.backend_path }}" ]; then
-            echo "Backend folder '${{ inputs.backend_path }}' was not found."
+          if [ ! -d "$BACKEND_PATH" ]; then
+            echo "Backend folder '$BACKEND_PATH' was not found."
             echo "Create a backend service folder first, then rerun this workflow."
             exit 1
           fi
@@ -56,7 +58,7 @@ jobs:
 
           upload_folder(
               repo_id=os.environ["HF_SPACE_ID"],
-              folder_path="${{ inputs.backend_path }}",
+              folder_path=os.environ["BACKEND_PATH"],
               path_in_repo=".",
               repo_type="space",
               token=os.environ["HF_TOKEN"],
