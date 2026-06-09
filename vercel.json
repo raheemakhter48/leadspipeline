@@ -3,5 +3,6 @@
   "buildCommand": "npm run build",
   "framework": "nextjs",
   "installCommand": "npm ci",
-  "outputDirectory": ".next"
+  "outputDirectory": ".next",
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ':!backend'"
 }
