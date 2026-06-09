@@ -569,7 +569,7 @@ export default function Home() {
 
   async function sendEmailRequest(item: Pick<MessageQueueItem, "body" | "subject" | "to">) {
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 18000);
+    const timeout = window.setTimeout(() => controller.abort(), 35000);
 
     try {
       console.info("[mail] sending", { to: item.to, subject: item.subject });
@@ -586,7 +586,7 @@ export default function Home() {
     } catch (error) {
       console.error("[mail] request failed", error);
       return Response.json(
-        { error: error instanceof DOMException && error.name === "AbortError" ? "Email send timed out. Check SMTP or try again." : "Email send failed." },
+        { error: error instanceof DOMException && error.name === "AbortError" ? "Email send timed out after 35 seconds. Check HF logs and SMTP settings." : "Email send failed." },
         { status: 504 },
       );
     } finally {

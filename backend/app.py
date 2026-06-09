@@ -59,13 +59,16 @@ def health() -> dict[str, str]:
 
 @app.get("/mail/status")
 def mail_status() -> dict[str, bool]:
-    return {"configured": message_smtp_configured()}
+    return {"configured": brevo_configured() or message_smtp_configured()}
 
 
 @app.post("/mail/send")
 def mail_send(payload: SendMailRequest) -> dict[str, bool]:
+    if brevo_configured():
+        return send_with_brevo(payload)
+
     if not message_smtp_configured():
-        raise HTTPException(status_code=500, detail="Message SMTP is not configured.")
+        raise HTTPException(status_code=500, detail="Brevo API or Message SMTP is not configured.")
 
     message = EmailMessage()
     sender_email = os.getenv("MESSAGE_SMTP_FROM") or os.getenv("MESSAGE_SMTP_USER", "")
@@ -113,6 +116,37 @@ def mail_send(payload: SendMailRequest) -> dict[str, bool]:
                 server.quit()
             except Exception:
                 pass
+
+    return {"ok": True}
+
+
+def send_with_brevo(payload: SendMailRequest) -> dict[str, bool]:
+    sender_email = os.getenv("BREVO_FROM_EMAIL") or os.getenv("MESSAGE_SMTP_FROM") or os.getenv("MESSAGE_SMTP_USER")
+    sender_name = os.getenv("BREVO_FROM_NAME", "LeadsPipeline")
+
+    if not sender_email:
+        raise HTTPException(status_code=500, detail="BREVO_FROM_EMAIL is missing.")
+
+    response = requests.post(
+        "https://api.brevo.com/v3/smtp/email",
+        headers={
+            "accept": "application/json",
+            "api-key": os.getenv("BREVO_API_KEY", ""),
+            "content-type": "application/json",
+        },
+        json={
+            "sender": {"email": sender_email, "name": sender_name},
+            "to": [{"email": str(payload.to)}],
+            "replyTo": {"email": sender_email, "name": sender_name},
+            "subject": payload.subject,
+            "textContent": payload.body,
+            "htmlContent": f"<pre style=\"font-family:Arial,sans-serif;white-space:pre-wrap\">{escape_html(payload.body)}</pre>",
+        },
+        timeout=20,
+    )
+
+    if response.status_code not in (200, 201, 202):
+        raise HTTPException(status_code=response.status_code, detail=f"Brevo send failed: {response.text[:500]}")
 
     return {"ok": True}
 
@@ -206,6 +240,20 @@ def message_smtp_configured() -> bool:
         os.getenv("MESSAGE_SMTP_HOST")
         and os.getenv("MESSAGE_SMTP_USER")
         and os.getenv("MESSAGE_SMTP_PASS")
+    )
+
+
+def brevo_configured() -> bool:
+    return bool(os.getenv("BREVO_API_KEY"))
+
+
+def escape_html(value: str) -> str:
+    return (
+        value.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&#39;")
     )
 
 

@@ -67,6 +67,9 @@ Set these secrets in the Hugging Face Space settings:
 - `MESSAGE_SMTP_USER`
 - `MESSAGE_SMTP_PASS`
 - `MESSAGE_SMTP_FROM`
+- `BREVO_API_KEY`
+- `BREVO_FROM_EMAIL`
+- `BREVO_FROM_NAME`
 
 ## Backend split checklist
 
@@ -76,6 +79,7 @@ The current Hugging Face backend already supports:
 - AI message tailoring
 - SMTP status
 - SMTP email sending
+- Brevo transactional email sending
 
 These routes still run inside the Next.js/Vercel app unless you split them later:
 
