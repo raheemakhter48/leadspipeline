@@ -6,21 +6,27 @@ const globalForDb = globalThis as typeof globalThis & {
   leadEngineSchemaReady?: Promise<void>;
 };
 
-function createPool() {
+function getDbPool() {
+  if (globalForDb.leadEngineDbPool) return globalForDb.leadEngineDbPool;
+
   const connectionString = process.env.DATABASE_URL;
 
   if (!connectionString) {
     throw new Error("DATABASE_URL is not configured.");
   }
 
-  return new Pool({
+  globalForDb.leadEngineDbPool = new Pool({
     connectionString,
     max: 5,
     ssl: { rejectUnauthorized: false },
   });
+
+  return globalForDb.leadEngineDbPool;
 }
 
-export const db = globalForDb.leadEngineDbPool ?? (globalForDb.leadEngineDbPool = createPool());
+export const db = {
+  query: (text: string, params?: unknown[]) => getDbPool().query(text, params),
+};
 
 export function ensureSchema() {
   globalForDb.leadEngineSchemaReady ??= db.query(`
