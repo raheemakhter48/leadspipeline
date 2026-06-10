@@ -11,6 +11,8 @@ from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 
+from lead_engine import search_ready_leads
+
 
 app = FastAPI(title="LeadsPipeline Backend", version="0.1.0")
 
@@ -52,6 +54,23 @@ class AdminTestMailRequest(BaseModel):
     body: str = "LeadsPipeline backend admin test email."
     subject: str = "LeadsPipeline backend test"
     to: EmailStr
+
+
+class ReadyLeadSearchRequest(BaseModel):
+    category: str = "Healthcare"
+    city: str = "All Cities"
+    country: str = "United States"
+    decisionMaker: bool = True
+    directDial: bool = False
+    emailVerified: bool = False
+    excludedLeadIds: list[str] = []
+    fetchContacts: bool = True
+    includeWebResults: bool = True
+    max: int = 50
+    service: str = "SEO Services"
+    stage: str = "Growth Stage"
+    state: str = "All Regions"
+    targetWebsite: str = ""
 
 
 @app.get("/")
@@ -101,6 +120,23 @@ def admin_status(x_admin_token: str | None = Header(default=None)) -> dict[str, 
 def admin_test_mail(payload: AdminTestMailRequest, x_admin_token: str | None = Header(default=None)) -> dict[str, bool]:
     require_admin(x_admin_token)
     return mail_send(SendMailRequest(body=payload.body, subject=payload.subject, to=payload.to))
+
+
+@app.post("/leads/ready-search")
+def ready_lead_search(payload: ReadyLeadSearchRequest) -> dict[str, Any]:
+    leads = search_ready_leads(payload.model_dump())
+    max_count = max(1, min(payload.max, 500))
+    warning = ""
+    if not leads:
+        warning = "No real leads found. Try turning Email Verified off, selecting a city, or changing the category."
+    elif len(leads) < max_count:
+        warning = f"{len(leads)} real leads found from free sources."
+
+    return {
+        "leads": leads,
+        "mode": "backend_free_scraper",
+        "warning": warning,
+    }
 
 
 @app.post("/mail/send")

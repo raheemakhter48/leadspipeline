@@ -135,9 +135,10 @@ export function MessagesWorkspace({
   setMessageSubject: (value: string) => void;
   setSelectedRecipientIds: (value: string[]) => void;
 }) {
-  const selectedLeads = leads.filter((lead) => selectedRecipientIds.includes(lead.id));
+  const contactableLeads = leads.filter((lead) => isEmail(lead.email || ""));
+  const selectedLeads = contactableLeads.filter((lead) => selectedRecipientIds.includes(lead.id));
   const previewLead = selectedLeads[0] ?? leads[0];
-  const recipientCount = selectedRecipientIds.length + manualEmails.length;
+  const recipientCount = selectedLeads.length + manualEmails.length;
   const sentCount = sentMessages.filter((item) => item.status === "sent").length;
   const queuedCount = sentMessages.filter((item) => item.status === "queued" || item.status === "sending").length;
   const sentRecipients = sentMessages.filter((item) => item.status === "sent");
@@ -151,7 +152,7 @@ export function MessagesWorkspace({
   }
 
   function toggleAllRecipients() {
-    setSelectedRecipientIds(selectedRecipientIds.length === leads.length ? [] : leads.map((lead) => lead.id));
+    setSelectedRecipientIds(selectedLeads.length === contactableLeads.length && contactableLeads.length > 0 ? [] : contactableLeads.map((lead) => lead.id));
   }
 
   return (
@@ -277,8 +278,8 @@ export function MessagesWorkspace({
               <h3 className="font-semibold">Recipients</h3>
               <p className="text-sm text-[#65605a]">Saved real leads only.</p>
             </div>
-            <button className="rounded-md border border-black/15 px-3 py-2 text-sm disabled:opacity-50" disabled={leads.length === 0} onClick={toggleAllRecipients} type="button">
-              {selectedRecipientIds.length === leads.length && leads.length > 0 ? "Clear" : "Select all"}
+            <button className="rounded-md border border-black/15 px-3 py-2 text-sm disabled:opacity-50" disabled={contactableLeads.length === 0} onClick={toggleAllRecipients} type="button">
+              {selectedLeads.length === contactableLeads.length && contactableLeads.length > 0 ? "Clear" : "Select all"}
             </button>
           </div>
           <div className="max-h-56 overflow-y-auto p-3">
@@ -332,11 +333,11 @@ export function MessagesWorkspace({
                 </div>
               )}
             </div>
-            {leads.length === 0 ? (
-              <p className="rounded-md bg-[#f4f1ea] p-3 text-sm text-[#65605a]">No saved contacts yet. Add emails manually or run Ready Engine and save selected leads.</p>
+            {contactableLeads.length === 0 ? (
+              <p className="rounded-md bg-[#f4f1ea] p-3 text-sm text-[#65605a]">No saved contacts with email yet. Add emails manually or save leads that include email addresses.</p>
             ) : (
               <div className="space-y-2">
-                {leads.map((lead) => (
+                {contactableLeads.map((lead) => (
                   <label className="flex items-start gap-3 rounded-md bg-[#f4f1ea] p-3 text-sm" key={lead.id}>
                     <input checked={selectedRecipientIds.includes(lead.id)} onChange={() => toggleRecipient(lead.id)} type="checkbox" />
                     <span>
@@ -420,6 +421,10 @@ function applyTemplate(template: string, lead: Lead) {
     .replaceAll("{{website}}", lead.website || "your website")
     .replaceAll("{{category}}", lead.category)
     .replaceAll("{{email}}", lead.email || "");
+}
+
+function isEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 export function SettingsWorkspace({ message }: { message: string }) {

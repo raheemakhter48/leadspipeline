@@ -41,6 +41,7 @@ export function ReadyToBuyWorkspace(props: {
   setReadyService: (value: string) => void;
   setReadyState: (value: string) => void;
   setTargetWebsite: (value: string) => void;
+  onSaveReadyLeads: () => void;
   onStart: (event: FormEvent<HTMLFormElement>) => void;
   onToggleLead: (id: string) => void;
 }) {
@@ -85,6 +86,14 @@ export function ReadyToBuyWorkspace(props: {
           <button className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-[#101418] font-medium text-white hover:bg-[#252b31]" type="submit">
             {props.loading ? <Loader2 className="animate-spin" size={16} /> : <Play size={16} />}
             {props.loading ? "Loading leads..." : "Start Engine"}
+          </button>
+          <button
+            className="mt-2 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-black/15 bg-white font-medium disabled:opacity-50"
+            disabled={props.loading || props.selected.length === 0}
+            onClick={props.onSaveReadyLeads}
+            type="button"
+          >
+            Save ready leads
           </button>
           <p className="mt-3 text-sm text-[#65605a]">Start Engine fetches websites, email, phone, and social handles.</p>
         </form>

@@ -56,6 +56,7 @@ export default function Home() {
   const [messageTemplate, setMessageTemplate] = useState("");
   const [messageQueueLoading, setMessageQueueLoading] = useState(false);
   const [messageNotice, setMessageNotice] = useState("");
+  const [messageNoticeType, setMessageNoticeType] = useState<"error" | "success">("success");
   const [messageDebug, setMessageDebug] = useState("");
   const [googleConnected, setGoogleConnected] = useState(false);
   const [googleConnectLoading, setGoogleConnectLoading] = useState(false);
@@ -95,9 +96,9 @@ export default function Home() {
   useEffect(() => {
     async function loadSavedData() {
       const [leadResponse, campaignResponse] = await Promise.all([fetch("/api/leads"), fetch("/api/campaigns")]);
-      const leadPayload = await leadResponse.json();
+      const leadPayload = leadResponse.ok ? await leadResponse.json() : { leads: [] };
       const campaignPayload = await campaignResponse.json();
-      setSavedLeads(leadPayload.leads ?? []);
+      setSavedLeads(mergeLeads([...(leadPayload.leads ?? []), ...readLocalSavedLeads()]));
       setCampaigns(campaignPayload.campaigns ?? []);
       const mailResponse = await apiFetch("/api/mail/status");
       const mailPayload = await mailResponse.json();
@@ -315,16 +316,71 @@ export default function Home() {
   }
 
   async function saveSelected() {
-    const leadsToSave = leads.filter((lead) => selected.includes(lead.id));
+    const sourceLeads = activeTab === "ready" ? readyLeads : leads;
+    const leadsToSave = sourceLeads.filter((lead) => selected.includes(lead.id));
+    if (leadsToSave.length === 0) {
+      setMessage("Select leads first.");
+      return;
+    }
     const response = await fetch("/api/leads", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ leads: leadsToSave }),
     });
+    if (!response.ok) {
+      const localLeads = saveLocalLeads(leadsToSave, savedLeads);
+      setSavedLeads(localLeads);
+      const fallbackMessage = `${leadsToSave.length} leads saved locally. Database save is unavailable.`;
+      setMessage(fallbackMessage);
+      showMessageNotice(fallbackMessage);
+      setSelected([]);
+      setActiveTab("contacts");
+      return;
+    }
     const payload = await response.json();
-    setSavedLeads(payload.leads ?? []);
-    setMessage(`${payload.saved} leads saved to contacts.`);
+    const mergedLeads = mergeLeads([...(payload.leads ?? []), ...leadsToSave.map((lead) => ({ ...lead, status: "saved" as const }))]);
+    window.localStorage.setItem("leadspipeline_saved_leads", JSON.stringify(mergedLeads));
+    setSavedLeads(mergedLeads);
+    const successMessage = `${payload.saved} leads saved to Contacts.`;
+    setMessage(successMessage);
+    showMessageNotice(successMessage);
     setSelected([]);
+    setActiveTab("contacts");
+  }
+
+  async function saveReadyLeads() {
+    const leadsToSave = readyLeads.filter((lead) => selected.includes(lead.id));
+    if (leadsToSave.length === 0) {
+      setMessage("Select ready leads first.");
+      return;
+    }
+
+    const response = await fetch("/api/leads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ leads: leadsToSave }),
+    });
+    if (!response.ok) {
+      const localLeads = saveLocalLeads(leadsToSave, savedLeads);
+      setSavedLeads(localLeads);
+      setSelectedRecipientIds(leadsToSave.filter((lead) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(lead.email || "")).map((lead) => lead.id));
+      const fallbackMessage = `${leadsToSave.length} ready leads saved locally. Database save is unavailable.`;
+      setMessage(fallbackMessage);
+      showMessageNotice(fallbackMessage);
+      setSelected([]);
+      setActiveTab("messages");
+      return;
+    }
+    const payload = await response.json();
+    const mergedLeads = mergeLeads([...(payload.leads ?? []), ...leadsToSave.map((lead) => ({ ...lead, status: "saved" as const }))]);
+    window.localStorage.setItem("leadspipeline_saved_leads", JSON.stringify(mergedLeads));
+    setSavedLeads(mergedLeads);
+    setSelectedRecipientIds(leadsToSave.filter((lead) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(lead.email || "")).map((lead) => lead.id));
+    setSelected([]);
+    setActiveTab("messages");
+    const successMessage = `${payload.saved} ready leads saved. They are selected in Messages for sending later.`;
+    setMessage(successMessage);
+    showMessageNotice(successMessage);
   }
 
   async function createCampaign(event: FormEvent<HTMLFormElement>) {
@@ -410,7 +466,8 @@ export default function Home() {
     setManualEmails((current) => current.filter((item) => item !== email));
   }
 
-  function showMessageNotice(text: string) {
+  function showMessageNotice(text: string, type: "error" | "success" = "success") {
+    setMessageNoticeType(type);
     setMessageNotice(text);
     window.setTimeout(() => setMessageNotice(""), 3000);
   }
@@ -641,6 +698,62 @@ export default function Home() {
     };
   }
 
+  function readySearchKey(input: {
+    category: string;
+    city: string;
+    country: string;
+    decisionMaker: boolean;
+    directDial: boolean;
+    emailVerified: boolean;
+    fetchContacts: boolean;
+    includeWebResults: boolean;
+    maxReadyLeads: number;
+    readyService: string;
+    readyState: string;
+    targetWebsite: string;
+  }) {
+    return `ready_seen:${JSON.stringify(input)}`;
+  }
+
+  function readSeenReadyLeadIds(searchKey: string) {
+    try {
+      return JSON.parse(window.localStorage.getItem(searchKey) || "[]") as string[];
+    } catch {
+      return [];
+    }
+  }
+
+  function rememberSeenReadyLeadIds(searchKey: string, leadIds: string[]) {
+    if (leadIds.length === 0) return;
+    const current = new Set(readSeenReadyLeadIds(searchKey));
+    leadIds.forEach((id) => current.add(id));
+    window.localStorage.setItem(searchKey, JSON.stringify([...current].slice(-2000)));
+  }
+
+  function readLocalSavedLeads() {
+    try {
+      return JSON.parse(window.localStorage.getItem("leadspipeline_saved_leads") || "[]") as Lead[];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveLocalLeads(incoming: Lead[], current: Lead[]) {
+    const unique = mergeLeads([...incoming.map((lead) => ({ ...lead, status: "saved" as const })), ...current]);
+    window.localStorage.setItem("leadspipeline_saved_leads", JSON.stringify(unique));
+    return unique;
+  }
+
+  function mergeLeads(leadsToMerge: Lead[]) {
+    const seen = new Set<string>();
+    return leadsToMerge.filter((lead) => {
+      const key = lead.id || lead.email || lead.website || lead.businessName;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
   async function startReadyEngine(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMode("loading");
@@ -648,6 +761,21 @@ export default function Home() {
     setReadyLeads([]);
     setLeads([]);
     setSelected([]);
+    const searchKey = readySearchKey({
+      category: readyCategory,
+      city: readyCity,
+      country: readyCountry,
+      decisionMaker,
+      directDial,
+      emailVerified,
+      fetchContacts,
+      includeWebResults,
+      maxReadyLeads,
+      readyService,
+      readyState,
+      targetWebsite,
+    });
+    const excludedLeadIds = readSeenReadyLeadIds(searchKey);
 
     const response = await fetch("/api/ready/search", {
       method: "POST",
@@ -658,6 +786,7 @@ export default function Home() {
         country: readyCountry,
         directDial,
         emailVerified,
+        excludedLeadIds,
         fetchContacts,
         includeWebResults,
         decisionMaker,
@@ -670,6 +799,7 @@ export default function Home() {
     });
     const payload = await response.json();
     const liveLeads = payload.leads ?? [];
+    rememberSeenReadyLeadIds(searchKey, liveLeads.map((lead: Lead) => lead.id));
 
     setReadyLeads(liveLeads);
     setLeads(liveLeads);
@@ -714,6 +844,17 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#f4f1ea] text-[#171717] lg:h-screen lg:overflow-hidden">
+      {messageNotice && (
+        <div
+          className={`fixed right-6 top-6 z-50 max-w-sm rounded-md border px-4 py-3 text-sm font-semibold shadow-lg ${
+            messageNoticeType === "error"
+              ? "border-red-200 bg-red-50 text-red-700"
+              : "border-[#1f6f5b]/30 bg-[#dcebe6] text-[#1f6f5b]"
+          }`}
+        >
+          {messageNotice}
+        </div>
+      )}
       <div className="grid min-h-screen grid-cols-1 lg:h-screen lg:min-h-0 lg:grid-cols-[260px_1fr]">
         <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
         <section className="flex min-h-0 flex-col px-4 py-5 sm:px-6 lg:overflow-hidden lg:px-8">
@@ -823,6 +964,7 @@ export default function Home() {
                 setSelected([]);
               }}
               setTargetWebsite={setTargetWebsite}
+              onSaveReadyLeads={saveReadyLeads}
               onStart={startReadyEngine}
               onToggleLead={toggleLead}
             />
