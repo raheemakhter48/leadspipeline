@@ -16,7 +16,7 @@ import {
 } from "@/components/SimpleWorkspaces";
 import type { QuickSearch, ReadyHistoryItem, TabId } from "@/lib/app-types";
 import { defaultRegion } from "@/lib/locations";
-import { messageTemplates } from "@/lib/message-templates";
+import { applyTemplateValues, messageTemplates } from "@/lib/message-templates";
 import { apiFetch } from "@/lib/api-client";
 import type { AuthUser } from "@/lib/auth-db";
 import type { Campaign, Lead } from "@/lib/types";
@@ -416,11 +416,21 @@ export default function Home() {
   }
 
   function buildMessages() {
+    const selectedTemplate = messageTemplates.find((item) => item.name === messageTemplate);
     const recipients = savedLeads.filter((lead) => selectedRecipientIds.includes(lead.id));
     const leadMessages: MessageQueueItem[] = recipients.map((lead) => {
       const to = lead.email || lead.website || lead.phone || "No contact detail";
       return {
         body: applyMessageTemplate(composer, lead),
+        html: selectedTemplate
+          ? applyTemplateValues(selectedTemplate.html, {
+              category: lead.category,
+              company: lead.businessName,
+              email: lead.email || "",
+              name: lead.businessName,
+              website: lead.website || "your website",
+            })
+          : undefined,
         id: crypto.randomUUID(),
         status: "queued",
         subject: applyMessageTemplate(messageSubject, lead),
@@ -428,8 +438,18 @@ export default function Home() {
       };
     });
     const manualMessages: MessageQueueItem[] = manualEmails.map((email) => {
+      const company = email.split("@")[1]?.split(".")[0] ?? "your company";
       return {
         body: applyManualEmailTemplate(composer, email),
+        html: selectedTemplate
+          ? applyTemplateValues(selectedTemplate.html, {
+              category: "business",
+              company,
+              email,
+              name: email.split("@")[0],
+              website: `https://${email.split("@")[1] ?? ""}`,
+            })
+          : undefined,
         id: crypto.randomUUID(),
         status: "queued",
         subject: applyManualEmailTemplate(messageSubject, email),
@@ -567,7 +587,7 @@ export default function Home() {
     if (response.ok) showMessageNotice("Mail sent successfully.");
   }
 
-  async function sendEmailRequest(item: Pick<MessageQueueItem, "body" | "subject" | "to">) {
+  async function sendEmailRequest(item: Pick<MessageQueueItem, "body" | "html" | "subject" | "to">) {
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 35000);
 
@@ -576,7 +596,7 @@ export default function Home() {
       const response = await apiFetch("/api/google/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: item.body, subject: item.subject, to: item.to }),
+        body: JSON.stringify({ body: item.body, html: item.html, subject: item.subject, to: item.to }),
         signal: controller.signal,
       });
       const cloned = response.clone();

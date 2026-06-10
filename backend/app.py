@@ -43,6 +43,7 @@ class AiIntelRequest(BaseModel):
 
 class SendMailRequest(BaseModel):
     body: str
+    html: str | None = None
     subject: str
     to: EmailStr
 
@@ -76,6 +77,8 @@ def mail_send(payload: SendMailRequest) -> dict[str, bool]:
     message["To"] = payload.to
     message["Subject"] = payload.subject
     message.set_content(payload.body)
+    if payload.html:
+        message.add_alternative(payload.html, subtype="html")
 
     host = os.getenv("MESSAGE_SMTP_HOST", "")
     port = int(os.getenv("MESSAGE_SMTP_PORT", "587"))
@@ -140,7 +143,8 @@ def send_with_brevo(payload: SendMailRequest) -> dict[str, bool]:
             "replyTo": {"email": sender_email, "name": sender_name},
             "subject": payload.subject,
             "textContent": payload.body,
-            "htmlContent": f"<pre style=\"font-family:Arial,sans-serif;white-space:pre-wrap\">{escape_html(payload.body)}</pre>",
+            "htmlContent": payload.html
+            or f"<pre style=\"font-family:Arial,sans-serif;white-space:pre-wrap\">{escape_html(payload.body)}</pre>",
         },
         timeout=20,
     )

@@ -7,6 +7,7 @@ import type { FormEvent } from "react";
 
 export type MessageQueueItem = {
   body: string;
+  html?: string;
   id: string;
   status: "queued" | "sending" | "sent" | "failed";
   subject: string;
@@ -142,6 +143,8 @@ export function MessagesWorkspace({
   const sentRecipients = sentMessages.filter((item) => item.status === "sent");
   const previewBody = previewLead ? applyTemplate(composer, previewLead) : composer;
   const previewSubject = previewLead ? applyTemplate(messageSubject, previewLead) : messageSubject;
+  const selectedTemplate = messageTemplates.find((template) => template.name === messageTemplate);
+  const previewHtml = selectedTemplate && previewLead ? applyTemplate(selectedTemplate.html, previewLead) : selectedTemplate?.html;
 
   function toggleRecipient(id: string) {
     setSelectedRecipientIds(selectedRecipientIds.includes(id) ? selectedRecipientIds.filter((leadId) => leadId !== id) : [...selectedRecipientIds, id]);
@@ -220,11 +223,7 @@ export function MessagesWorkspace({
                 </div>
                 <span className="rounded-md bg-[#101418] px-2 py-1 text-xs text-white">{template.tone}</span>
               </div>
-              <div className="mt-3 rounded-md bg-[#0f2831] p-3 text-white">
-                <p className="text-[11px] uppercase text-[#f4c96b]">{template.cta}</p>
-                <p className="mt-1 font-semibold">{template.subject}</p>
-                <p className="mt-2 max-h-12 overflow-hidden text-xs text-white/80">{template.body}</p>
-              </div>
+              <iframe className="mt-3 h-44 w-full rounded-md border border-black/10 bg-white" srcDoc={template.html} title={`${template.name} preview`} />
             </button>
           ))}
         </div>
@@ -371,7 +370,13 @@ export function MessagesWorkspace({
           </div>
           <div className="space-y-2 p-4 text-sm">
             <p className="font-semibold">{previewSubject || "No subject"}</p>
-            <p className="whitespace-pre-wrap rounded-md bg-[#f4f1ea] p-3 text-[#3f3b37]">{previewBody || "Select a draft or type an email body."}</p>
+            {previewHtml ? (
+              <div className="max-h-[520px] overflow-auto rounded-md border border-black/10 bg-[#f8fafc] p-2">
+                <iframe className="h-[500px] w-full rounded bg-white" srcDoc={previewHtml} title="Email template preview" />
+              </div>
+            ) : (
+              <p className="whitespace-pre-wrap rounded-md bg-[#f4f1ea] p-3 text-[#3f3b37]">{previewBody || "Select a draft or type an email body."}</p>
+            )}
           </div>
         </div>
         <div className="rounded-md border border-black/10 bg-white shadow-sm">

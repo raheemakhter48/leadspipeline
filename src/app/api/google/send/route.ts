@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 const DEFAULT_BACKEND_URL = "http://92.4.71.166:7860";
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as { body?: string; subject?: string; to?: string };
+  const body = (await request.json()) as { body?: string; html?: string; subject?: string; to?: string };
 
   if (!body.to || !body.subject || !body.body) {
     return NextResponse.json({ error: "To, subject, and body are required." }, { status: 400 });
@@ -11,6 +11,7 @@ export async function POST(request: Request) {
 
   const payload = {
     body: body.body,
+    html: body.html,
     subject: body.subject,
     to: body.to,
   };
@@ -18,7 +19,7 @@ export async function POST(request: Request) {
   return proxyToBackend(payload);
 }
 
-async function proxyToBackend(body: { body: string; subject: string; to: string }) {
+async function proxyToBackend(body: { body: string; html?: string; subject: string; to: string }) {
   const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || DEFAULT_BACKEND_URL;
 
   if (!backendUrl) {
