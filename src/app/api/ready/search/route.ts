@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { searchGoogleMapsLeads } from "@/lib/google-maps";
 import { searchOpenMapLeads } from "@/lib/open-map-scraper";
 import { searchPublicWebLeads } from "@/lib/web-leads";
 import type { Lead } from "@/lib/types";
@@ -35,12 +34,6 @@ export async function POST(request: Request) {
       limit: max,
       location,
     }), 10000, "Open map source timed out."),
-    withTimeout(searchGoogleMapsLeads({
-      category: String(body.category ?? ""),
-      keyword: String(body.service ?? ""),
-      limit: max,
-      location,
-    }), 7000, "Google Maps source timed out."),
   ]);
 
   const initialLeads = settled.flatMap((result) => (result.status === "fulfilled" ? result.value : []));

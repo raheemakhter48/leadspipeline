@@ -119,10 +119,7 @@ async function searchDuckDuckGo(query: string, max: number): Promise<SearchResul
 
 async function enrichContact(website: string): Promise<ContactResult> {
   const scraped = await crawlWebsiteContact(website);
-  if (scraped.email) return scraped;
-
-  const hunterEmail = await hunterDomainEmail(website);
-  return { ...scraped, email: hunterEmail };
+  return scraped;
 }
 
 async function crawlWebsiteContact(website: string): Promise<ContactResult> {

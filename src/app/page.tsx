@@ -76,7 +76,7 @@ export default function Home() {
   const [readyState, setReadyState] = useState("All Regions");
   const [readyCity, setReadyCity] = useState("All Cities");
   const [maxReadyLeads, setMaxReadyLeads] = useState(50);
-  const [emailVerified, setEmailVerified] = useState(true);
+  const [emailVerified, setEmailVerified] = useState(false);
   const [directDial, setDirectDial] = useState(false);
   const [decisionMaker, setDecisionMaker] = useState(true);
   const [includeWebResults, setIncludeWebResults] = useState(true);
