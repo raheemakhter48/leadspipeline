@@ -51,8 +51,10 @@ export default function AdminPage() {
     setLoading(true);
     setMessage("");
     try {
-      const response = await fetch(`${normalizedBackendUrl}/admin/status`, {
-        headers: adminToken ? { "x-admin-token": adminToken } : {},
+      const response = await fetch("/api/admin/backend-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adminToken, backendUrl: normalizedBackendUrl }),
         cache: "no-store",
       });
       const payload = await response.json().catch(() => ({}));
@@ -82,13 +84,12 @@ export default function AdminPage() {
     setTestLoading(true);
     setMessage("");
     try {
-      const response = await fetch(`${normalizedBackendUrl}/admin/test-mail`, {
+      const response = await fetch("/api/admin/test-mail", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(adminToken ? { "x-admin-token": adminToken } : {}),
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          adminToken,
+          backendUrl: normalizedBackendUrl,
           to: testEmail,
           subject: "LeadsPipeline backend admin test",
           body: "This is a test email from the LeadsPipeline backend admin dashboard.",
