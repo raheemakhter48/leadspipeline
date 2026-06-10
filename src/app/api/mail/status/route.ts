@@ -1,13 +1,8 @@
 import { NextResponse } from "next/server";
-import { messageSmtpConfigured } from "@/lib/email";
 
-const DEFAULT_BACKEND_URL = "https://raheemakhter-leadspipeline.hf.space";
+const DEFAULT_BACKEND_URL = "http://92.4.71.166:7860";
 
 export async function GET() {
-  if (messageSmtpConfigured()) {
-    return NextResponse.json({ configured: true });
-  }
-
   const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || DEFAULT_BACKEND_URL;
 
   if (!backendUrl) {

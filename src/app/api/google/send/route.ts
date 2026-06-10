@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { messageSmtpConfigured, sendOutboundEmail } from "@/lib/email";
 
-const DEFAULT_BACKEND_URL = "https://raheemakhter-leadspipeline.hf.space";
+const DEFAULT_BACKEND_URL = "http://92.4.71.166:7860";
 
 export async function POST(request: Request) {
   const body = (await request.json()) as { body?: string; subject?: string; to?: string };
@@ -16,22 +15,7 @@ export async function POST(request: Request) {
     to: body.to,
   };
 
-  if (!messageSmtpConfigured()) {
-    return proxyToBackend(payload);
-  }
-
-  try {
-    const result = await sendOutboundEmail(payload);
-
-    if (!result.sent) {
-      return NextResponse.json({ error: result.error ?? "Email send failed." }, { status: 500 });
-    }
-
-    return NextResponse.json({ ok: true });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Email send failed.";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+  return proxyToBackend(payload);
 }
 
 async function proxyToBackend(body: { body: string; subject: string; to: string }) {
