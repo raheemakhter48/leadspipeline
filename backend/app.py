@@ -7,7 +7,7 @@ from typing import Any
 
 import requests
 from bs4 import BeautifulSoup
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 
@@ -48,6 +48,12 @@ class SendMailRequest(BaseModel):
     to: EmailStr
 
 
+class AdminTestMailRequest(BaseModel):
+    body: str = "LeadsPipeline backend admin test email."
+    subject: str = "LeadsPipeline backend test"
+    to: EmailStr
+
+
 @app.get("/")
 def root() -> dict[str, str]:
     return {"ok": "true", "service": "LeadsPipeline backend"}
@@ -61,6 +67,40 @@ def health() -> dict[str, str]:
 @app.get("/mail/status")
 def mail_status() -> dict[str, bool]:
     return {"configured": brevo_configured() or message_smtp_configured()}
+
+
+@app.get("/admin/status")
+def admin_status(x_admin_token: str | None = Header(default=None)) -> dict[str, Any]:
+    require_admin(x_admin_token)
+    return {
+        "service": "LeadsPipeline backend",
+        "status": "ok",
+        "adminTokenConfigured": bool(os.getenv("ADMIN_TOKEN")),
+        "allowedOrigins": allowed_origins,
+        "groq": {
+            "configured": bool(os.getenv("GROQ_API_KEY")),
+            "model": os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+        },
+        "mail": {
+            "configured": brevo_configured() or message_smtp_configured(),
+            "provider": "brevo" if brevo_configured() else "smtp" if message_smtp_configured() else "none",
+            "smtpHost": os.getenv("MESSAGE_SMTP_HOST", ""),
+            "smtpPort": os.getenv("MESSAGE_SMTP_PORT", ""),
+            "smtpSecure": os.getenv("MESSAGE_SMTP_SECURE", ""),
+            "smtpFrom": os.getenv("MESSAGE_SMTP_FROM") or os.getenv("MESSAGE_SMTP_USER", ""),
+        },
+        "features": {
+            "htmlEmail": True,
+            "aiIntel": True,
+            "messageTailor": True,
+        },
+    }
+
+
+@app.post("/admin/test-mail")
+def admin_test_mail(payload: AdminTestMailRequest, x_admin_token: str | None = Header(default=None)) -> dict[str, bool]:
+    require_admin(x_admin_token)
+    return mail_send(SendMailRequest(body=payload.body, subject=payload.subject, to=payload.to))
 
 
 @app.post("/mail/send")
@@ -249,6 +289,12 @@ def message_smtp_configured() -> bool:
 
 def brevo_configured() -> bool:
     return bool(os.getenv("BREVO_API_KEY"))
+
+
+def require_admin(token: str | None) -> None:
+    expected = os.getenv("ADMIN_TOKEN")
+    if expected and token != expected:
+        raise HTTPException(status_code=401, detail="Invalid admin token.")
 
 
 def escape_html(value: str) -> str:
