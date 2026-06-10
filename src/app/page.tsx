@@ -653,7 +653,7 @@ export default function Home() {
       const response = await apiFetch("/api/google/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: item.body, html: item.html, subject: item.subject, to: item.to }),
+        body: JSON.stringify({ body: item.body, html: item.html, subject: item.subject, to: item.to, userEmail: authUser?.email ?? "unknown" }),
         signal: controller.signal,
       });
       const cloned = response.clone();

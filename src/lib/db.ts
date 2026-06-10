@@ -1,5 +1,5 @@
 import { Pool } from "pg";
-import type { Campaign, Lead } from "@/lib/types";
+import type { Campaign, Lead, MailLog } from "@/lib/types";
 
 const globalForDb = globalThis as typeof globalThis & {
   leadEngineDbPool?: Pool;
@@ -66,13 +66,20 @@ export function ensureSchema() {
 
     create table if not exists messages (
       id text primary key,
+      user_email text not null default 'unknown',
       recipient_email text not null,
       subject text not null,
       body text not null,
       status text not null default 'queued',
+      backend_response text not null default '',
+      error_message text not null default '',
       sent_at timestamptz,
       created_at timestamptz not null default now()
     );
+
+    alter table messages add column if not exists user_email text not null default 'unknown';
+    alter table messages add column if not exists backend_response text not null default '';
+    alter table messages add column if not exists error_message text not null default '';
 
     create table if not exists auth_users (
       id text primary key,
@@ -205,6 +212,72 @@ export async function createCampaignInDb(input: Pick<Campaign, "name" | "subject
   return rowToCampaign(result.rows[0]);
 }
 
+export async function saveMailLogToDb(input: Omit<MailLog, "id" | "createdAt">) {
+  await ensureSchema();
+  const id = crypto.randomUUID();
+  const result = await db.query(
+    `
+    insert into messages (
+      id, user_email, recipient_email, subject, body, status,
+      backend_response, error_message, sent_at, created_at
+    )
+    values ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+    returning *
+    `,
+    [
+      id,
+      input.userEmail,
+      input.recipientEmail,
+      input.subject,
+      input.body,
+      input.status,
+      input.backendResponse,
+      input.errorMessage,
+      input.sentAt ?? null,
+    ],
+  );
+
+  return rowToMailLog(result.rows[0]);
+}
+
+export async function getMailLogs(limit = 100) {
+  await ensureSchema();
+  const result = await db.query(
+    `
+    select *
+    from messages
+    order by created_at desc
+    limit $1
+    `,
+    [limit],
+  );
+
+  return result.rows.map(rowToMailLog);
+}
+
+export async function getMailUserStats() {
+  await ensureSchema();
+  const result = await db.query(`
+    select
+      user_email,
+      count(*)::int as total,
+      count(*) filter (where status = 'sent')::int as sent,
+      count(*) filter (where status = 'failed')::int as failed,
+      max(created_at) as last_activity
+    from messages
+    group by user_email
+    order by max(created_at) desc
+  `);
+
+  return result.rows.map((row) => ({
+    failed: Number(row.failed ?? 0),
+    lastActivity: row.last_activity ? new Date(String(row.last_activity)).toISOString() : "",
+    sent: Number(row.sent ?? 0),
+    total: Number(row.total ?? 0),
+    userEmail: String(row.user_email ?? "unknown"),
+  }));
+}
+
 function rowToLead(row: Record<string, unknown>): Lead {
   return {
     id: String(row.id),
@@ -239,6 +312,21 @@ function rowToCampaign(row: Record<string, unknown>): Campaign {
     opens: Number(row.opens ?? 0),
     clicks: Number(row.clicks ?? 0),
     bounces: Number(row.bounces ?? 0),
+    createdAt: new Date(String(row.created_at)).toISOString(),
+  };
+}
+
+function rowToMailLog(row: Record<string, unknown>): MailLog {
+  return {
+    id: String(row.id),
+    userEmail: String(row.user_email ?? "unknown"),
+    recipientEmail: String(row.recipient_email ?? ""),
+    subject: String(row.subject ?? ""),
+    body: String(row.body ?? ""),
+    status: row.status === "sent" ? "sent" : "failed",
+    backendResponse: String(row.backend_response ?? ""),
+    errorMessage: String(row.error_message ?? ""),
+    sentAt: row.sent_at ? new Date(String(row.sent_at)).toISOString() : undefined,
     createdAt: new Date(String(row.created_at)).toISOString(),
   };
 }

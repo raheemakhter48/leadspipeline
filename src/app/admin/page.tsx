@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, CheckCircle2, Mail, RefreshCw, Server, Shield, XCircle } from "lucide-react";
+import { Activity, CheckCircle2, Mail, RefreshCw, Server, Shield, Users, XCircle } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 type AdminStatus = {
@@ -27,6 +27,26 @@ type AdminStatus = {
   };
 };
 
+type MailUserStats = {
+  failed: number;
+  lastActivity: string;
+  sent: number;
+  total: number;
+  userEmail: string;
+};
+
+type MailLog = {
+  id: string;
+  userEmail: string;
+  recipientEmail: string;
+  subject: string;
+  status: "sent" | "failed";
+  backendResponse: string;
+  errorMessage: string;
+  sentAt?: string;
+  createdAt: string;
+};
+
 const DEFAULT_BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://92.4.71.166:7860";
 
 export default function AdminPage() {
@@ -37,6 +57,8 @@ export default function AdminPage() {
   const [message, setMessage] = useState("");
   const [testEmail, setTestEmail] = useState("");
   const [testLoading, setTestLoading] = useState(false);
+  const [mailLogs, setMailLogs] = useState<MailLog[]>([]);
+  const [mailUsers, setMailUsers] = useState<MailUserStats[]>([]);
 
   const normalizedBackendUrl = useMemo(() => backendUrl.replace(/\/$/, ""), [backendUrl]);
 
@@ -64,6 +86,7 @@ export default function AdminPage() {
         return;
       }
       setStatus(payload as AdminStatus);
+      await loadMailLogs();
       window.localStorage.setItem("leadspipeline_admin_token", adminToken);
       window.localStorage.setItem("leadspipeline_backend_url", normalizedBackendUrl);
       setMessage("Backend status loaded.");
@@ -73,6 +96,24 @@ export default function AdminPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function loadMailLogs() {
+    const response = await fetch("/api/admin/mail-logs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ adminToken }),
+      cache: "no-store",
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMailLogs([]);
+      setMailUsers([]);
+      setMessage(payload.error ?? "Mail logs request failed.");
+      return;
+    }
+    setMailLogs(payload.logs ?? []);
+    setMailUsers(payload.users ?? []);
   }
 
   async function sendTestMail() {
@@ -97,6 +138,7 @@ export default function AdminPage() {
       });
       const payload = await response.json().catch(() => ({}));
       setMessage(response.ok ? "Test email sent." : payload.detail ?? payload.error ?? "Test email failed.");
+      await loadMailLogs();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Test email failed.");
     } finally {
@@ -182,6 +224,83 @@ export default function AdminPage() {
             </button>
           </div>
         </section>
+
+        <section className="mt-4 rounded-md border border-black/10 bg-white p-4 shadow-sm">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold">Mail activity</h2>
+              <p className="text-sm text-[#65605a]">User-wise sent mail count and latest backend send responses.</p>
+            </div>
+            <button className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-black/15 px-4 text-sm font-semibold" onClick={loadMailLogs} type="button">
+              <RefreshCw size={15} />
+              Refresh logs
+            </button>
+          </div>
+
+          <div className="mb-4 grid gap-3 md:grid-cols-3">
+            {mailUsers.length === 0 ? (
+              <div className="rounded-md bg-[#f4f1ea] p-4 text-sm text-[#65605a]">No mail activity recorded yet.</div>
+            ) : (
+              mailUsers.map((user) => (
+                <div className="rounded-md border border-black/10 bg-[#f4f1ea] p-4" key={user.userEmail}>
+                  <div className="mb-3 flex items-center gap-2">
+                    <span className="grid size-9 place-items-center rounded-md bg-white">
+                      <Users size={16} />
+                    </span>
+                    <p className="break-all text-sm font-semibold">{user.userEmail}</p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-center text-sm">
+                    <Metric label="Total" value={user.total} />
+                    <Metric label="Sent" value={user.sent} />
+                    <Metric label="Failed" value={user.failed} />
+                  </div>
+                  <p className="mt-3 text-xs text-[#65605a]">Last: {formatDate(user.lastActivity)}</p>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="overflow-x-auto rounded-md border border-black/10">
+            <table className="w-full min-w-[900px] border-collapse text-left text-sm">
+              <thead className="bg-[#f4f1ea] text-xs uppercase tracking-[0.12em] text-[#65605a]">
+                <tr>
+                  <th className="p-3">Time</th>
+                  <th className="p-3">User</th>
+                  <th className="p-3">To</th>
+                  <th className="p-3">Subject</th>
+                  <th className="p-3">Status</th>
+                  <th className="p-3">Response / error</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-black/10">
+                {mailLogs.length === 0 ? (
+                  <tr>
+                    <td className="p-4 text-[#65605a]" colSpan={6}>
+                      No mail records yet.
+                    </td>
+                  </tr>
+                ) : (
+                  mailLogs.map((log) => (
+                    <tr key={log.id}>
+                      <td className="p-3 align-top text-[#65605a]">{formatDate(log.sentAt || log.createdAt)}</td>
+                      <td className="break-all p-3 align-top">{log.userEmail}</td>
+                      <td className="break-all p-3 align-top">{log.recipientEmail}</td>
+                      <td className="p-3 align-top font-medium">{log.subject}</td>
+                      <td className="p-3 align-top">
+                        <span className={`rounded-md px-2 py-1 text-xs font-semibold ${log.status === "sent" ? "bg-[#dcebe6] text-[#1f6f5b]" : "bg-red-50 text-red-700"}`}>
+                          {log.status}
+                        </span>
+                      </td>
+                      <td className="max-w-md p-3 align-top text-xs text-[#65605a]">
+                        {log.errorMessage || log.backendResponse || "-"}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
     </main>
   );
@@ -209,4 +328,21 @@ function InfoRow({ label, value }: { label: string; value: string }) {
       <p className="mt-1 break-words font-medium">{value}</p>
     </div>
   );
+}
+
+function Metric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-md bg-white p-2">
+      <p className="font-semibold">{value}</p>
+      <p className="text-xs text-[#65605a]">{label}</p>
+    </div>
+  );
+}
+
+function formatDate(value: string) {
+  if (!value) return "-";
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
 }

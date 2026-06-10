@@ -40,3 +40,16 @@ export type Campaign = {
   bounces: number;
   createdAt: string;
 };
+
+export type MailLog = {
+  id: string;
+  userEmail: string;
+  recipientEmail: string;
+  subject: string;
+  body: string;
+  status: "sent" | "failed";
+  backendResponse: string;
+  errorMessage: string;
+  sentAt?: string;
+  createdAt: string;
+};

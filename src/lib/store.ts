@@ -1,4 +1,4 @@
-import type { Campaign, Lead } from "@/lib/types";
+import type { Campaign, Lead, MailLog } from "@/lib/types";
 
 const globalStore = globalThis as typeof globalThis & {
   leadEngineStore?: {
@@ -10,6 +10,7 @@ const globalStore = globalThis as typeof globalThis & {
     };
     leads: Lead[];
     campaigns: Campaign[];
+    mailLogs: MailLog[];
   };
 };
 
@@ -18,6 +19,7 @@ export const store =
   (globalStore.leadEngineStore = {
     leads: [],
     campaigns: [],
+    mailLogs: [],
   });
 
 export function saveLeads(incoming: Lead[]) {
@@ -46,4 +48,15 @@ export function createCampaign(input: Pick<Campaign, "name" | "subject" | "templ
 
   store.campaigns = [campaign, ...store.campaigns];
   return campaign;
+}
+
+export function saveMailLog(input: Omit<MailLog, "id" | "createdAt">) {
+  const log: MailLog = {
+    id: crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+    ...input,
+  };
+
+  store.mailLogs = [log, ...store.mailLogs].slice(0, 500);
+  return log;
 }
