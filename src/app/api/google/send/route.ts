@@ -43,7 +43,7 @@ async function proxyToBackend(body: { body: string; subject: string; to: string 
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 16000);
+    const timeout = setTimeout(() => controller.abort(), 45000);
     const response = await fetch(`${backendUrl.replace(/\/$/, "")}/mail/send`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
