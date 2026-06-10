@@ -51,4 +51,13 @@ jobs:
             docker build -t leadspipeline-backend .
             docker rm -f leadspipeline-backend 2>/dev/null || true
             docker run -d --name leadspipeline-backend --env-file .env -p 7860:7860 --restart unless-stopped leadspipeline-backend
-            curl -fsS http://localhost:7860/health
+            for attempt in 1 2 3 4 5; do
+              if curl -fsS http://localhost:7860/health; then
+                exit 0
+              fi
+              echo "Health check failed, retrying ($attempt/5)..."
+              sleep 3
+            done
+            docker ps -a
+            docker logs leadspipeline-backend --tail 100
+            exit 1

@@ -1,7 +1,5 @@
 const backendRouteMap: Record<string, string> = {
   "/api/ai/intel": "/ai/intel",
-  "/api/google/send": "/mail/send",
-  "/api/mail/status": "/mail/status",
   "/api/messages/tailor": "/messages/tailor",
 };
 

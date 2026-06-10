@@ -5,7 +5,8 @@ export function smtpConfigured() {
 }
 
 export function messageSmtpConfigured() {
-  return Boolean(process.env.MESSAGE_SMTP_HOST && process.env.MESSAGE_SMTP_USER && process.env.MESSAGE_SMTP_PASS);
+  const config = getMessageSmtpConfig();
+  return Boolean(config.host && config.user && config.pass);
 }
 
 export async function sendOtpEmail({ code, to }: { code: string; to: string }) {
@@ -40,26 +41,46 @@ export async function sendOtpEmail({ code, to }: { code: string; to: string }) {
 }
 
 export async function sendOutboundEmail({ body, subject, to }: { body: string; subject: string; to: string }) {
-  if (!messageSmtpConfigured()) {
+  const config = getMessageSmtpConfig();
+
+  if (!config.host || !config.user || !config.pass) {
     return { error: "Message SMTP is not configured.", sent: false };
   }
 
   const transporter = nodemailer.createTransport({
     auth: {
-      pass: process.env.MESSAGE_SMTP_PASS,
-      user: process.env.MESSAGE_SMTP_USER,
+      pass: config.pass,
+      user: config.user,
     },
-    host: process.env.MESSAGE_SMTP_HOST,
-    port: Number(process.env.MESSAGE_SMTP_PORT ?? 587),
-    secure: process.env.MESSAGE_SMTP_SECURE === "true",
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    host: config.host,
+    port: config.port,
+    secure: config.secure,
   });
 
   await transporter.sendMail({
-    from: process.env.MESSAGE_SMTP_FROM ?? process.env.MESSAGE_SMTP_USER,
+    from: config.from,
     subject,
     text: body,
     to,
   });
 
   return { sent: true };
+}
+
+function getMessageSmtpConfig() {
+  const host = process.env.MESSAGE_SMTP_HOST ?? process.env.SMTP_HOST ?? "";
+  const user = process.env.MESSAGE_SMTP_USER ?? process.env.SMTP_USERNAME ?? process.env.SMTP_USER ?? "";
+  const pass = process.env.MESSAGE_SMTP_PASS ?? process.env.SMTP_PASSWORD ?? process.env.SMTP_PASS ?? "";
+  const from = process.env.MESSAGE_SMTP_FROM ?? process.env.SMTP_FROM ?? user;
+  const port = Number(process.env.MESSAGE_SMTP_PORT ?? process.env.SMTP_PORT ?? 587);
+  const encryption = (process.env.MESSAGE_SMTP_ENCRYPTION ?? process.env.SMTP_ENCRYPTION ?? "").toLowerCase();
+  const secure =
+    process.env.MESSAGE_SMTP_SECURE === "true" ||
+    process.env.SMTP_SECURE === "true" ||
+    encryption === "ssl" ||
+    port === 465;
+
+  return { from, host, pass, port, secure, user };
 }
