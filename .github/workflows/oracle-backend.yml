@@ -1,0 +1,54 @@
+name: Deploy backend to Oracle
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - ".github/workflows/oracle-backend.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check Oracle secrets
+        env:
+          ORACLE_HOST: ${{ secrets.ORACLE_HOST }}
+          ORACLE_USER: ${{ secrets.ORACLE_USER }}
+          ORACLE_SSH_KEY: ${{ secrets.ORACLE_SSH_KEY }}
+        run: |
+          test -n "$ORACLE_HOST" || (echo "Missing GitHub secret: ORACLE_HOST" && exit 1)
+          test -n "$ORACLE_USER" || (echo "Missing GitHub secret: ORACLE_USER" && exit 1)
+          test -n "$ORACLE_SSH_KEY" || (echo "Missing GitHub secret: ORACLE_SSH_KEY" && exit 1)
+
+      - name: Upload backend to Oracle
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ORACLE_HOST }}
+          username: ${{ secrets.ORACLE_USER }}
+          key: ${{ secrets.ORACLE_SSH_KEY }}
+          port: ${{ secrets.ORACLE_PORT || 22 }}
+          source: "backend/*"
+          target: "/home/ubuntu/leadspipeline"
+          overwrite: true
+
+      - name: Rebuild and restart backend
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.ORACLE_HOST }}
+          username: ${{ secrets.ORACLE_USER }}
+          key: ${{ secrets.ORACLE_SSH_KEY }}
+          port: ${{ secrets.ORACLE_PORT || 22 }}
+          script: |
+            set -e
+            cd /home/ubuntu/leadspipeline/backend
+            test -f .env || (echo "Missing /home/ubuntu/leadspipeline/backend/.env" && exit 1)
+            docker build -t leadspipeline-backend .
+            docker rm -f leadspipeline-backend 2>/dev/null || true
+            docker run -d --name leadspipeline-backend --env-file .env -p 7860:7860 --restart unless-stopped leadspipeline-backend
+            curl -fsS http://localhost:7860/health
