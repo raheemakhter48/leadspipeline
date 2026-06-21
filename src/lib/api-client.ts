@@ -1,9 +1,6 @@
-const backendRouteMap: Record<string, string> = {
-  "/api/ai/intel": "/ai/intel",
-  "/api/messages/tailor": "/messages/tailor",
-};
+const backendRouteMap: Record<string, string> = {};
 
-const DEFAULT_BACKEND_URL = "https://raheemakhter-leadspipeline.hf.space";
+const DEFAULT_BACKEND_URL = "http://92.4.71.166:7860";
 
 export function apiFetch(path: string, init?: RequestInit) {
   const backendUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || DEFAULT_BACKEND_URL).replace(/\/$/, "");
