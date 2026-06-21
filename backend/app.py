@@ -241,24 +241,37 @@ def tailor_message(payload: TailorRequest) -> dict[str, str]:
             "warning": "GROQ_API_KEY is not configured. Used local tailoring.",
         }
 
-    result = groq_json(
-        [
-            {
-                "role": "system",
-                "content": "Return strict JSON only with subject and body. Rewrite B2B outreach emails. Keep placeholders when useful.",
-            },
-            {
-                "role": "user",
-                "content": json.dumps(
-                    {
-                        "current": {"body": payload.body, "subject": payload.subject},
-                        "instruction": payload.instruction,
-                        "requiredShape": {"subject": "string", "body": "string"},
-                    }
-                ),
-            },
-        ]
-    )
+    try:
+        result = groq_json(
+            [
+                {
+                    "role": "system",
+                    "content": "Return strict JSON only with subject and body. Rewrite B2B outreach emails. Keep placeholders when useful.",
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "current": {"body": payload.body, "subject": payload.subject},
+                            "instruction": payload.instruction,
+                            "requiredShape": {"subject": "string", "body": "string"},
+                        }
+                    ),
+                },
+            ]
+        )
+    except requests.HTTPError as exc:
+        return {
+            "subject": payload.subject,
+            "body": local_tailor(payload.body, payload.instruction),
+            "warning": f"Groq request failed ({exc.response.status_code}). Used local tailoring.",
+        }
+    except Exception:
+        return {
+            "subject": payload.subject,
+            "body": local_tailor(payload.body, payload.instruction),
+            "warning": "Groq request failed. Used local tailoring.",
+        }
 
     return {
         "subject": str(result.get("subject") or payload.subject),
@@ -278,34 +291,39 @@ def ai_intel(payload: AiIntelRequest) -> dict[str, Any]:
     if not api_key:
         return {**fallback, "warning": "GROQ_API_KEY is not configured. Used local AI fallback."}
 
-    result = groq_json(
-        [
-            {
-                "role": "system",
-                "content": (
-                    "Return strict JSON only. Create concise B2B company intel and an outreach email. "
-                    "Use only provided website text and user prompt. Do not invent private facts."
-                ),
-            },
-            {
-                "role": "user",
-                "content": json.dumps(
-                    {
-                        "company": company,
-                        "prompt": prompt,
-                        "website": website,
-                        "websiteText": website_text,
-                        "requiredShape": {
-                            "companyIntel": ["string"],
-                            "outreachAngles": ["string"],
-                            "subject": "string",
-                            "body": "string",
-                        },
-                    }
-                ),
-            },
-        ]
-    )
+    try:
+        result = groq_json(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "Return strict JSON only. Create concise B2B company intel and an outreach email. "
+                        "Use only provided website text and user prompt. Do not invent private facts."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "company": company,
+                            "prompt": prompt,
+                            "website": website,
+                            "websiteText": website_text,
+                            "requiredShape": {
+                                "companyIntel": ["string"],
+                                "outreachAngles": ["string"],
+                                "subject": "string",
+                                "body": "string",
+                            },
+                        }
+                    ),
+                },
+            ]
+        )
+    except requests.HTTPError as exc:
+        return {**fallback, "warning": f"Groq request failed ({exc.response.status_code}). Used local AI fallback."}
+    except Exception:
+        return {**fallback, "warning": "Groq request failed. Used local AI fallback."}
 
     return {
         "companyIntel": normalize_list(result.get("companyIntel")) or fallback["companyIntel"],
