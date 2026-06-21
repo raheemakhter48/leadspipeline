@@ -14,8 +14,13 @@ type AiIntelResponse = {
   warning?: string;
 };
 
+const DEFAULT_BACKEND_URL = "http://92.4.71.166:7860";
+
 export async function POST(request: Request) {
   const body = (await request.json()) as AiIntelRequest;
+  const backendResponse = await proxyToOracleBackend(body);
+  if (backendResponse) return backendResponse;
+
   const company = body.company?.trim() || "the company";
   const prompt = body.prompt?.trim() || "Find useful company intel and write a short B2B outreach email.";
   const website = normalizeUrl(body.website ?? "");
@@ -157,4 +162,27 @@ function stripHtml(value: string) {
     .replace(/&amp;/g, "&")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+async function proxyToOracleBackend(body: AiIntelRequest) {
+  const backendUrl = (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || DEFAULT_BACKEND_URL).replace(/\/$/, "");
+
+  try {
+    const response = await fetch(`${backendUrl}/ai/intel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+      signal: AbortSignal.timeout(55000),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      console.error("[ai/intel] Oracle backend failed", payload);
+      return null;
+    }
+    return NextResponse.json(payload);
+  } catch (error) {
+    console.error("[ai/intel] Oracle backend unavailable", error);
+    return null;
+  }
 }

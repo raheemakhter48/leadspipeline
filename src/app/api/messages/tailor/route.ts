@@ -1,11 +1,16 @@
 import { NextResponse } from "next/server";
 
+const DEFAULT_BACKEND_URL = "http://92.4.71.166:7860";
+
 export async function POST(request: Request) {
   const body = (await request.json()) as { body?: string; instruction?: string; subject?: string };
 
   if (!body.body || !body.subject || !body.instruction) {
     return NextResponse.json({ error: "Subject, body, and AI instruction are required." }, { status: 400 });
   }
+
+  const backendResponse = await proxyToOracleBackend(body as { body: string; instruction: string; subject: string });
+  if (backendResponse) return backendResponse;
 
   if (!process.env.GROQ_API_KEY) {
     return NextResponse.json({
@@ -79,4 +84,27 @@ function localTailor(message: string, instruction: string) {
     return message.replace("Hi ", "Hello ").replace("I can help", "I would like to help");
   }
   return `${message}\n\nContext: ${instruction}`;
+}
+
+async function proxyToOracleBackend(body: { body: string; instruction: string; subject: string }) {
+  const backendUrl = (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || DEFAULT_BACKEND_URL).replace(/\/$/, "");
+
+  try {
+    const response = await fetch(`${backendUrl}/messages/tailor`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+      signal: AbortSignal.timeout(55000),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      console.error("[messages/tailor] Oracle backend failed", payload);
+      return null;
+    }
+    return NextResponse.json(payload);
+  } catch (error) {
+    console.error("[messages/tailor] Oracle backend unavailable", error);
+    return null;
+  }
 }
