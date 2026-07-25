@@ -22,21 +22,33 @@ type ReadySearchBody = {
 
 const DEFAULT_BACKEND_URL = "http://92.4.71.166:7860";
 
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
 export async function POST(request: Request) {
   const body = (await request.json()) as ReadySearchBody;
   const backendUrl = (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || DEFAULT_BACKEND_URL).replace(/\/$/, "");
+  let backendError = "";
 
   try {
-    const response = await fetch(`${backendUrl}/leads/ready-search`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      cache: "no-store",
-      signal: AbortSignal.timeout(55000),
-    });
+    const response = await fetchReadyBackend(backendUrl, body);
     const payload = await response.json().catch(() => ({}));
-    if (response.ok) return NextResponse.json(payload);
-  } catch {
+    if (response.ok) {
+      if ((payload.leads?.length ?? 0) === 0 && (body.excludedLeadIds?.length ?? 0) > 0) {
+        const retryResponse = await fetchReadyBackend(backendUrl, { ...body, excludedLeadIds: [] });
+        const retryPayload = await retryResponse.json().catch(() => ({}));
+        if (retryResponse.ok && (retryPayload.leads?.length ?? 0) > 0) {
+          return NextResponse.json({
+            ...retryPayload,
+            warning: retryPayload.warning || "Showing previously seen email-ready leads for this search.",
+          });
+        }
+      }
+      return NextResponse.json(payload);
+    }
+    backendError = `Oracle backend returned ${response.status}.`;
+  } catch (error) {
+    backendError = error instanceof Error ? error.message : "Oracle backend request failed.";
     // Fallback below keeps local development usable if the Oracle scraper is offline.
   }
 
@@ -44,7 +56,19 @@ export async function POST(request: Request) {
   return NextResponse.json({
     leads,
     mode: "local_free_scraper_fallback",
-    warning: leads.length ? `${leads.length} leads found with local fallback scraper.` : "No real leads found from local fallback scraper.",
+    warning: leads.length
+      ? `${leads.length} leads found with local fallback scraper. ${backendError}`
+      : `No real leads found from local fallback scraper. ${backendError}`,
+  });
+}
+
+function fetchReadyBackend(backendUrl: string, body: ReadySearchBody) {
+  return fetch(`${backendUrl}/leads/ready-search`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    cache: "no-store",
+    signal: AbortSignal.timeout(55000),
   });
 }
 
