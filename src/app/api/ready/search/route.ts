@@ -52,6 +52,18 @@ export async function POST(request: Request) {
     // Fallback below keeps local development usable if the Oracle scraper is offline.
   }
 
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json(
+      {
+        backendUrl,
+        error: backendError || "Oracle backend request failed.",
+        leads: [],
+        mode: "oracle_backend_unavailable",
+      },
+      { status: 502 },
+    );
+  }
+
   const leads = await localFallbackSearch(body);
   return NextResponse.json({
     leads,
