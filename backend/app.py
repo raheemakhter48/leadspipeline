@@ -100,6 +100,12 @@ def admin_status(x_admin_token: str | None = Header(default=None)) -> dict[str, 
             "configured": bool(os.getenv("GROQ_API_KEY")),
             "model": os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
         },
+        "perplexity": {
+            "configured": bool(os.getenv("PERPLEXITY_API_KEY")),
+        },
+        "serper": {
+            "configured": bool(os.getenv("SERPER_API_KEY")),
+        },
         "mail": {
             "configured": brevo_configured() or message_smtp_configured(),
             "provider": "brevo" if brevo_configured() else "smtp" if message_smtp_configured() else "none",
@@ -112,6 +118,9 @@ def admin_status(x_admin_token: str | None = Header(default=None)) -> dict[str, 
             "htmlEmail": True,
             "aiIntel": True,
             "messageTailor": True,
+            "readyLeadEmailsRequired": True,
+            "perplexityReadySearch": bool(os.getenv("PERPLEXITY_API_KEY")),
+            "serperReadyFallback": bool(os.getenv("SERPER_API_KEY")),
         },
     }
 
@@ -128,13 +137,13 @@ def ready_lead_search(payload: ReadyLeadSearchRequest) -> dict[str, Any]:
     max_count = max(1, min(payload.max, 500))
     warning = ""
     if not leads:
-        warning = "No real leads found. Try turning Email Verified off, selecting a city, or changing the category."
+        warning = "No email-ready leads found. Select a specific city/state, broaden the category, or confirm PERPLEXITY_API_KEY and SERPER_API_KEY are configured."
     elif len(leads) < max_count:
-        warning = f"{len(leads)} real leads found from free sources."
+        warning = f"{len(leads)} email-ready leads found."
 
     return {
         "leads": leads,
-        "mode": "backend_free_scraper",
+        "mode": "backend_intelligent_email_scraper",
         "warning": warning,
     }
 

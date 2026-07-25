@@ -1,4 +1,5 @@
 import hashlib
+import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -12,6 +13,10 @@ from bs4 import BeautifulSoup
 SEARCH_TIMEOUT = 8
 CRAWL_TIMEOUT = 7
 CRAWL_WORKERS = 8
+PERPLEXITY_TIMEOUT = 20
+PERPLEXITY_MAX_RESULTS = 20
+SERPER_TIMEOUT = 15
+SERPER_MAX_RESULTS = 20
 CONTACT_PATH_HINTS = (
     "contact",
     "contact-us",
@@ -33,8 +38,18 @@ def search_ready_leads(input_data: dict[str, Any]) -> list[dict[str, Any]]:
     location = build_location(input_data)
 
     discovered = []
+    target = normalize_url(input_data.get("targetWebsite", ""))
+    if target and "example.com" not in target:
+        discovered.append({
+            "title": domain_to_name(target),
+            "url": target,
+            "snippet": "Target website provided by user.",
+            "source": "target_website",
+        })
     if include_web:
-      discovered.extend(search_public_web(input_data, location, limit))
+        primary_results = search_perplexity(input_data, location, limit)
+        discovered.extend(primary_results if primary_results else search_serper(input_data, location, limit))
+        discovered.extend(search_public_web(input_data, location, limit))
     discovered.extend(search_openstreetmap(input_data, location, limit))
 
     unique_sites = dedupe_discoveries(discovered)
@@ -51,7 +66,7 @@ def search_ready_leads(input_data: dict[str, Any]) -> list[dict[str, Any]]:
                 continue
             if lead.get("id") in excluded_ids:
                 continue
-            if input_data.get("emailVerified") and not lead.get("email"):
+            if not lead.get("email"):
                 continue
             if input_data.get("directDial") and not lead.get("phone"):
                 continue
@@ -60,6 +75,92 @@ def search_ready_leads(input_data: dict[str, Any]) -> list[dict[str, Any]]:
                 break
 
     return sorted(leads, key=lambda lead: lead["aiScore"], reverse=True)[:limit]
+
+
+def search_perplexity(input_data: dict[str, Any], location: str, limit: int) -> list[dict[str, str]]:
+    api_key = os.getenv("PERPLEXITY_API_KEY")
+    if not api_key:
+        return []
+
+    results: list[dict[str, str]] = []
+    country = country_code(input_data.get("country", ""))
+    per_query = min(PERPLEXITY_MAX_RESULTS, max(8, min(limit, 20)))
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    for query in build_queries(input_data, location)[:10]:
+        payload: dict[str, Any] = {
+            "query": query,
+            "max_results": per_query,
+            "max_tokens_per_page": 2500,
+        }
+        if country:
+            payload["country"] = country
+
+        try:
+            response = requests.post(
+                "https://api.perplexity.ai/search",
+                headers=headers,
+                json=payload,
+                timeout=PERPLEXITY_TIMEOUT,
+            )
+            if not response.ok:
+                continue
+            for item in response.json().get("results", []):
+                normalized = normalize_search_item(item, "perplexity_search")
+                if normalized and is_business_url(normalized.get("url", "")):
+                    results.append(normalized)
+        except Exception:
+            continue
+        if len(results) >= limit * 5:
+            break
+    return results
+
+
+def search_serper(input_data: dict[str, Any], location: str, limit: int) -> list[dict[str, str]]:
+    api_key = os.getenv("SERPER_API_KEY")
+    if not api_key:
+        return []
+
+    results: list[dict[str, str]] = []
+    country = country_code(input_data.get("country", ""))
+    per_query = min(SERPER_MAX_RESULTS, max(8, min(limit, 20)))
+    headers = {
+        "X-API-KEY": api_key,
+        "Content-Type": "application/json",
+    }
+
+    for query in build_queries(input_data, location)[:10]:
+        payload: dict[str, Any] = {
+            "q": query,
+            "num": per_query,
+            "hl": "en",
+        }
+        if country:
+            payload["gl"] = country.lower()
+        if location:
+            payload["location"] = location
+
+        try:
+            response = requests.post(
+                "https://google.serper.dev/search",
+                headers=headers,
+                json=payload,
+                timeout=SERPER_TIMEOUT,
+            )
+            if not response.ok:
+                continue
+            for item in response.json().get("organic", []):
+                normalized = normalize_search_item(item, "serper_search")
+                if normalized and is_business_url(normalized.get("url", "")):
+                    results.append(normalized)
+        except Exception:
+            continue
+        if len(results) >= limit * 5:
+            break
+    return results
 
 
 def search_public_web(input_data: dict[str, Any], location: str, limit: int) -> list[dict[str, str]]:
@@ -83,8 +184,9 @@ def search_public_web(input_data: dict[str, Any], location: str, limit: int) -> 
                 title = link.get_text(" ", strip=True)
                 snippet = result.select_one(".result__snippet")
                 text = snippet.get_text(" ", strip=True) if snippet else ""
-                if title and is_business_url(url):
-                    results.append({"title": title, "url": url, "snippet": text, "source": "web_search"})
+                normalized = normalize_search_item({"title": title, "url": url, "snippet": text}, "web_search")
+                if normalized and title and is_business_url(normalized.get("url", "")):
+                    results.append(normalized)
         except Exception:
             continue
         if len(results) >= limit * 5:
@@ -145,10 +247,10 @@ def build_lead(item: dict[str, str], input_data: dict[str, Any], location: str, 
     website = normalize_url(item.get("url", ""))
     contact = crawl_contact(website) if fetch_contacts and website else {"email": "", "phone": "", "socialLinks": []}
     phone = item.get("phone") or contact["phone"]
-    email = contact["email"]
+    email = item.get("email") or contact["email"]
     score = score_lead(website=website, email=email, phone=phone, source=item.get("source", "web_search"), index=index)
 
-    if not item.get("title") and not website:
+    if (not item.get("title") and not website) or not email:
         return None
 
     return {
@@ -233,18 +335,41 @@ def contact_links(html: str, base_url: str) -> list[str]:
 def build_queries(input_data: dict[str, Any], location: str) -> list[str]:
     category = input_data.get("category") or "business"
     service = input_data.get("service") or "services"
-    negatives = "-directory -list -jobs -course -template -examples -wikipedia"
+    stage = input_data.get("stage") or "Growth Stage"
+    negatives = "-directory -list -jobs -course -template -examples -wikipedia -linkedin -facebook -semrush -clutch"
     variants = category_variants(category)
     queries = [
-        f'{category} {location} contact email website {negatives}',
-        f'{category} {service} {location} business website {negatives}',
-        f'{category} {location} "contact us" "email" {negatives}',
-        f'{category} {location} "about us" "contact" {negatives}',
+        f'{category} {location} contact email phone website {negatives}',
+        f'{category} {service} {location} business website email {negatives}',
+        f'{category} {stage} {location} "contact us" "email" {negatives}',
+        f'{category} {location} "about us" "contact" "email" {negatives}',
+        f'{service} companies in {location} email phone website {negatives}',
     ]
     for variant in variants:
         queries.append(f"{variant} {location} website contact email {negatives}")
         queries.append(f"{variant} {location} phone website {negatives}")
     return list(dict.fromkeys(queries))
+
+
+def normalize_search_item(item: dict[str, Any], source: str) -> dict[str, str] | None:
+    snippet = decode_html(str(item.get("snippet") or item.get("description") or ""))
+    title = decode_html(str(item.get("title") or ""))
+    url = normalize_url(str(item.get("url") or item.get("link") or ""))
+    snippet_urls = extract_urls(snippet)
+    if not is_business_url(url):
+        url = next((candidate for candidate in snippet_urls if is_business_url(candidate)), url)
+    email = prefer_email(extract_emails(snippet))
+    phone = prefer_phone(extract_phones(snippet))
+    if not title and not url:
+        return None
+    return {
+        "title": title,
+        "url": url,
+        "snippet": snippet,
+        "email": email,
+        "phone": phone,
+        "source": source,
+    }
 
 
 def category_variants(category: str) -> list[str]:
@@ -311,6 +436,11 @@ def extract_social_links(html: str, base_url: str) -> list[str]:
     return socials
 
 
+def extract_urls(text: str) -> list[str]:
+    urls = re.findall(r"https?://[^\s<>\]\)\"']+", text, flags=re.I)
+    return [normalize_url(url.rstrip(".,;:")) for url in urls if normalize_url(url)]
+
+
 def prefer_email(emails: list[str]) -> str:
     clean = list(dict.fromkeys(email for email in emails if not email.startswith(("noreply@", "no-reply@", "privacy@", "legal@"))))
     for prefix in ("info@", "contact@", "hello@", "sales@", "support@", "office@", "admin@"):
@@ -333,6 +463,10 @@ def score_lead(website: str, email: str, phone: str, source: str, index: int) ->
         score += 16
     if phone:
         score += 8
+    if source == "perplexity_search":
+        score += 8
+    if source == "serper_search":
+        score += 6
     if source == "open_maps":
         score += 4
     return max(35, min(98, score - (index % 9)))
@@ -342,7 +476,24 @@ def is_business_url(url: str) -> bool:
     host = domain(url)
     if not host:
         return False
-    blocked = ("facebook.com", "instagram.com", "linkedin.com", "youtube.com", "yelp.com", "wikipedia.org", "crunchbase.com", "apollo.io", "zoominfo.com")
+    blocked = (
+        "facebook.com",
+        "instagram.com",
+        "linkedin.com",
+        "youtube.com",
+        "yelp.com",
+        "wikipedia.org",
+        "crunchbase.com",
+        "apollo.io",
+        "zoominfo.com",
+        "semrush.com",
+        "clutch.co",
+        "sortlist.",
+        "designrush.",
+        "goodfirms.",
+        "themanifest.",
+        "upcity.",
+    )
     return not any(item in host for item in blocked)
 
 
@@ -362,6 +513,29 @@ def build_location(input_data: dict[str, Any]) -> str:
         input_data.get("country", ""),
     ]
     return ", ".join(part for part in parts if part)
+
+
+def country_code(country: str) -> str:
+    codes = {
+        "United States": "US",
+        "United Kingdom": "GB",
+        "Canada": "CA",
+        "Australia": "AU",
+        "Pakistan": "PK",
+        "India": "IN",
+        "United Arab Emirates": "AE",
+        "Saudi Arabia": "SA",
+        "Germany": "DE",
+        "France": "FR",
+        "Spain": "ES",
+        "Italy": "IT",
+        "Netherlands": "NL",
+        "Singapore": "SG",
+    }
+    normalized = (country or "").strip()
+    if len(normalized) == 2:
+        return normalized.upper()
+    return codes.get(normalized, "")
 
 
 def normalize_url(value: str) -> str:

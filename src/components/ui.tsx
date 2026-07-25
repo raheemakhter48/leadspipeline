@@ -69,17 +69,19 @@ export function SelectField({
 
 export function Toggle({
   checked,
+  disabled = false,
   label,
   onChange,
 }: {
   checked: boolean;
+  disabled?: boolean;
   label: string;
   onChange: (value: boolean) => void;
 }) {
   return (
-    <label className="flex items-center justify-between gap-3 rounded-md bg-[#f4f1ea] px-3 py-2">
+    <label className={`flex items-center justify-between gap-3 rounded-md bg-[#f4f1ea] px-3 py-2 ${disabled ? "opacity-70" : ""}`}>
       <span>{label}</span>
-      <input checked={checked} onChange={(event) => onChange(event.target.checked)} type="checkbox" />
+      <input checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} type="checkbox" />
     </label>
   );
 }

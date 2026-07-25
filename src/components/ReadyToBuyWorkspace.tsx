@@ -72,7 +72,7 @@ export function ReadyToBuyWorkspace(props: {
           </label>
           <p className="mb-3 rounded-md bg-[#f4f1ea] p-3 text-sm font-medium">Daily Unique Leads: {props.dailyCount} leads</p>
           <div className="mb-4 grid gap-2 text-sm">
-            <Toggle label="Email Verified" checked={props.emailVerified} onChange={props.setEmailVerified} />
+            <Toggle label="Email Required" checked={true} disabled onChange={props.setEmailVerified} />
             <Toggle label="Direct Dial Phone" checked={props.directDial} onChange={props.setDirectDial} />
             <Toggle label="Decision Maker Email" checked={props.decisionMaker} onChange={props.setDecisionMaker} />
           </div>
@@ -119,7 +119,7 @@ export function ReadyToBuyWorkspace(props: {
       <div className="flex min-h-0 min-w-0 flex-col gap-4 xl:overflow-hidden">
         <div className="grid gap-3 md:grid-cols-3">
           <Metric label="Ready leads" value={String(props.leads.length)} detail="Current engine result" />
-          <Metric label="Email verified" value={props.emailVerified ? "On" : "Off"} detail="Verification filter" />
+          <Metric label="Email required" value="On" detail="Only contact-ready leads" />
           <Metric label="Fetch contacts" value={props.fetchContacts ? "On" : "Off"} detail="Contact enrichment" />
         </div>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col rounded-md border border-black/10 bg-white shadow-sm">
@@ -141,7 +141,7 @@ export function ReadyToBuyWorkspace(props: {
               <div>
                 <Loader2 className="mx-auto mb-3 animate-spin text-[#101418]" size={34} />
                 <p className="font-medium">Searching live websites</p>
-                <p className="mt-1 text-sm">Fetching websites, emails, phone numbers, and social handles.</p>
+                <p className="mt-1 text-sm">Finding location-matched companies with usable email addresses.</p>
               </div>
             </div>
           ) : props.leads.length === 0 ? (

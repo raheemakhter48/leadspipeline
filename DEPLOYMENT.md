@@ -61,6 +61,8 @@ Set these secrets in the Hugging Face Space settings:
 - `ALLOWED_ORIGINS`
 - `GROQ_API_KEY`
 - `GROQ_MODEL`
+- `PERPLEXITY_API_KEY`
+- `SERPER_API_KEY`
 - `MESSAGE_SMTP_HOST`
 - `MESSAGE_SMTP_PORT`
 - `MESSAGE_SMTP_SECURE`

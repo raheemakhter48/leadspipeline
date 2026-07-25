@@ -14,7 +14,7 @@ export type Lead = {
   reviewCount: number;
   location: string;
   country: string;
-  source: "google_maps" | "open_maps" | "web_search";
+  source: "google_maps" | "open_maps" | "web_search" | "perplexity_search" | "serper_search" | "target_website";
   aiScore: number;
   temperature: LeadTemperature;
   status: "new" | "saved" | "queued" | "contacted";

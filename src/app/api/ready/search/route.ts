@@ -68,7 +68,7 @@ async function localFallbackSearch(body: ReadySearchBody) {
 
   const leads = dedupeLeads(settled.flatMap((result) => (result.status === "fulfilled" ? result.value : []))).filter((lead) => {
     if (body.excludedLeadIds?.includes(lead.id)) return false;
-    if (body.emailVerified && !lead.email) return false;
+    if (!lead.email) return false;
     if (body.directDial && !lead.phone) return false;
     return true;
   });
