@@ -307,7 +307,7 @@ export default function Home() {
     setReadyHistory((current) => [
       {
         id: crypto.randomUUID(),
-        text: `${liveLeads.length} live ${input.category} leads for ${input.service} - ${new Date().toLocaleTimeString()}`,
+        text: `${liveLeads.length} ${input.service} leads in ${formatReadyLocation(input.city, input.state, input.country)} - ${new Date().toLocaleTimeString()}`,
       },
       ...current,
     ]);
@@ -715,6 +715,10 @@ export default function Home() {
     return `ready_seen:${JSON.stringify(input)}`;
   }
 
+  function formatReadyLocation(city: string, state: string, country: string) {
+    return [city !== "All Cities" ? city : "", state !== "All Regions" ? state : "", country].filter(Boolean).join(", ");
+  }
+
   function readSeenReadyLeadIds(searchKey: string) {
     try {
       return JSON.parse(window.localStorage.getItem(searchKey) || "[]") as string[];
@@ -808,7 +812,7 @@ export default function Home() {
     setReadyHistory((current) => [
       {
         id: crypto.randomUUID(),
-        text: `${liveLeads.length} live ${readyCategory} leads for ${readyService} - ${new Date().toLocaleTimeString()}`,
+        text: `${liveLeads.length} ${readyService} leads in ${formatReadyLocation(readyCity, readyState, readyCountry)} - ${new Date().toLocaleTimeString()}`,
       },
       ...current,
     ]);

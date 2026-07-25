@@ -47,10 +47,20 @@ def search_ready_leads(input_data: dict[str, Any]) -> list[dict[str, Any]]:
             "source": "target_website",
         })
     if include_web:
-        primary_results = search_perplexity(input_data, location, limit)
-        discovered.extend(primary_results if primary_results else search_serper(input_data, location, limit))
-        discovered.extend(search_public_web(input_data, location, limit))
-    discovered.extend(search_openstreetmap(input_data, location, limit))
+        perplexity_results = search_perplexity(input_data, location, limit)
+        serper_results = search_serper(input_data, location, limit)
+        public_results = search_public_web(input_data, location, limit)
+        discovered.extend(perplexity_results)
+        discovered.extend(serper_results)
+        discovered.extend(public_results)
+        print(
+            f"[ready-search] discovery location={location!r} service={input_data.get('service')!r} "
+            f"category={input_data.get('category')!r} perplexity={len(perplexity_results)} "
+            f"serper={len(serper_results)} web={len(public_results)}",
+            flush=True,
+        )
+    map_results = search_openstreetmap(input_data, location, limit)
+    discovered.extend(map_results)
 
     unique_sites = dedupe_discoveries(discovered)
     leads: list[dict[str, Any]] = []
@@ -74,7 +84,13 @@ def search_ready_leads(input_data: dict[str, Any]) -> list[dict[str, Any]]:
             if len(leads) >= limit:
                 break
 
-    return sorted(leads, key=lambda lead: lead["aiScore"], reverse=True)[:limit]
+    final_leads = sorted(leads, key=lambda lead: lead["aiScore"], reverse=True)[:limit]
+    print(
+        f"[ready-search] discovered={len(discovered)} unique={len(unique_sites)} maps={len(map_results)} "
+        f"email_leads={len(final_leads)}",
+        flush=True,
+    )
+    return final_leads
 
 
 def search_perplexity(input_data: dict[str, Any], location: str, limit: int) -> list[dict[str, str]]:
@@ -338,16 +354,29 @@ def build_queries(input_data: dict[str, Any], location: str) -> list[str]:
     stage = input_data.get("stage") or "Growth Stage"
     negatives = "-directory -list -jobs -course -template -examples -wikipedia -linkedin -facebook -semrush -clutch"
     variants = category_variants(category)
+    service_terms = service_variants(service)
+    category_filter = "" if category in ("Healthcare", "Local Businesses") else category
     queries = [
-        f'{category} {location} contact email phone website {negatives}',
-        f'{category} {service} {location} business website email {negatives}',
-        f'{category} {stage} {location} "contact us" "email" {negatives}',
-        f'{category} {location} "about us" "contact" "email" {negatives}',
-        f'{service} companies in {location} email phone website {negatives}',
+        f'{service} companies in {location} contact email phone website {negatives}',
+        f'{service} providers {location} "contact us" email website {negatives}',
+        f'{service} agency {location} email phone website {negatives}',
+        f'{service} services {location} business contact email {negatives}',
+        f'{service} {stage} company {location} email website {negatives}',
     ]
+    if category_filter:
+        queries.extend([
+            f'{category_filter} {service} companies in {location} contact email website {negatives}',
+            f'{category_filter} businesses {location} contact email website {negatives}',
+        ])
+    else:
+        queries.append(f'business services companies in {location} contact email website {negatives}')
+    for term in service_terms:
+        queries.append(f"{term} {location} contact email website {negatives}")
+        queries.append(f"{term} company {location} phone email {negatives}")
     for variant in variants:
-        queries.append(f"{variant} {location} website contact email {negatives}")
-        queries.append(f"{variant} {location} phone website {negatives}")
+        if category_filter:
+            queries.append(f"{variant} {location} website contact email {negatives}")
+            queries.append(f"{variant} {service} {location} phone email website {negatives}")
     return list(dict.fromkeys(queries))
 
 
@@ -384,6 +413,23 @@ def category_variants(category: str) -> list[str]:
         "SaaS": ["software company", "SaaS company", "technology company"],
     }
     return variants.get(category, [category])
+
+
+def service_variants(service: str) -> list[str]:
+    variants = {
+        "IT Support": ["managed IT services", "IT support company", "computer support", "network support", "MSP"],
+        "Cybersecurity": ["cybersecurity company", "managed security services", "information security consultant"],
+        "Cloud Services": ["cloud services provider", "cloud consulting company", "AWS Azure consultant"],
+        "Web Design": ["web design company", "website design agency", "web development company"],
+        "SEO Services": ["SEO agency", "local SEO company", "digital marketing agency"],
+        "Lead Generation": ["lead generation agency", "B2B lead generation company"],
+        "AI Automation": ["AI automation agency", "business automation consultant"],
+        "SaaS Development": ["software development company", "SaaS development agency"],
+        "Mobile App Development": ["mobile app development company", "app development agency"],
+        "Data Scraping": ["data scraping service", "web scraping company"],
+        "Data Enrichment": ["data enrichment service", "B2B data provider"],
+    }
+    return variants.get(service, [service])
 
 
 def osm_tags_for(category: str) -> list[str]:
