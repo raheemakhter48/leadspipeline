@@ -27,7 +27,7 @@ export const maxDuration = 60;
 
 export async function POST(request: Request) {
   const body = (await request.json()) as ReadySearchBody;
-  const backendUrl = (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || DEFAULT_BACKEND_URL).replace(/\/$/, "");
+  const backendUrl = normalizeBackendUrl(process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || DEFAULT_BACKEND_URL);
   let backendError = "";
 
   try {
@@ -55,7 +55,8 @@ export async function POST(request: Request) {
   if (process.env.NODE_ENV === "production") {
     return NextResponse.json(
       {
-        backendUrl,
+        backendUrlConfigured: Boolean(backendUrl),
+        backendUrlHost: safeHost(backendUrl),
         error: backendError || "Oracle backend request failed.",
         leads: [],
         mode: "oracle_backend_unavailable",
@@ -82,6 +83,28 @@ function fetchReadyBackend(backendUrl: string, body: ReadySearchBody) {
     cache: "no-store",
     signal: AbortSignal.timeout(55000),
   });
+}
+
+function normalizeBackendUrl(value: string) {
+  const cleaned = value
+    .trim()
+    .replace(/^BACKEND_URL=/, "")
+    .replace(/^NEXT_PUBLIC_BACKEND_URL=/, "")
+    .replace(/^["']|["']$/g, "")
+    .replace(/\/+$/, "");
+
+  if (!cleaned) return DEFAULT_BACKEND_URL;
+  if (/^https?:\/\//i.test(cleaned)) return cleaned;
+  return `http://${cleaned}`;
+}
+
+function safeHost(value: string) {
+  try {
+    const url = new URL(value);
+    return `${url.protocol}//${url.host}`;
+  } catch {
+    return "invalid-url";
+  }
 }
 
 async function localFallbackSearch(body: ReadySearchBody) {
