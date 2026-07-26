@@ -72,7 +72,7 @@ export default function Home() {
   const [targetWebsite, setTargetWebsite] = useState("");
   const [readyService, setReadyService] = useState("SEO Services");
   const [companyStage, setCompanyStage] = useState("Growth Stage");
-  const [readyCategory, setReadyCategory] = useState("Healthcare");
+  const [readyCategory, setReadyCategory] = useState("Local Businesses");
   const [readyCountry, setReadyCountry] = useState("United States");
   const [readyState, setReadyState] = useState("All Regions");
   const [readyCity, setReadyCity] = useState("All Cities");

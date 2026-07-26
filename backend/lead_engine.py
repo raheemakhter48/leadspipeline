@@ -261,6 +261,8 @@ def search_openstreetmap(input_data: dict[str, Any], location: str, limit: int) 
 
 def build_lead(item: dict[str, str], input_data: dict[str, Any], location: str, index: int, fetch_contacts: bool) -> dict[str, Any] | None:
     website = normalize_url(item.get("url", ""))
+    if not is_relevant_discovery(item, input_data, location):
+        return None
     contact = crawl_contact(website) if fetch_contacts and website else {"email": "", "phone": "", "socialLinks": []}
     phone = item.get("phone") or contact["phone"]
     email = item.get("email") or contact["email"]
@@ -271,9 +273,9 @@ def build_lead(item: dict[str, str], input_data: dict[str, Any], location: str, 
 
     return {
         "id": f"ready-{hash_text(website or item.get('title', '') + location)}",
-        "businessName": clean_title(item.get("title", "") or domain_to_name(website)),
+        "businessName": clean_business_name(item.get("title", ""), website),
         "category": input_data.get("category") or "Business",
-        "address": item.get("snippet") or location,
+        "address": compact_address(item.get("snippet", ""), location),
         "phone": phone,
         "email": email,
         "website": website,
@@ -523,12 +525,32 @@ def is_business_url(url: str) -> bool:
     if not host:
         return False
     blocked = (
+        ".gov",
+        ".mil",
         "facebook.com",
         "instagram.com",
         "linkedin.com",
+        "lnkd.in",
         "youtube.com",
         "yelp.com",
         "wikipedia.org",
+        "usembassy.gov",
+        "state.gov",
+        "navy.mil",
+        "army.mil",
+        "af.mil",
+        "marines.mil",
+        "scribd.com",
+        "slideshare.net",
+        "issuu.com",
+        "academia.edu",
+        "researchgate.net",
+        "indeed.com",
+        "glassdoor.com",
+        "bebee.com",
+        "ziprecruiter.com",
+        "simplyhired.com",
+        "monster.com",
         "crunchbase.com",
         "apollo.io",
         "zoominfo.com",
@@ -541,6 +563,47 @@ def is_business_url(url: str) -> bool:
         "upcity.",
     )
     return not any(item in host for item in blocked)
+
+
+def is_relevant_discovery(item: dict[str, str], input_data: dict[str, Any], location: str) -> bool:
+    website = normalize_url(item.get("url", ""))
+    text = f"{item.get('title', '')} {item.get('snippet', '')} {website}".lower()
+    if not is_business_url(website):
+        return False
+    blocked_terms = (
+        "privacy policy",
+        "terms of service",
+        "cookie policy",
+        "embassy",
+        "consulate",
+        "government",
+        "navy",
+        "army",
+        "job offers",
+        "jobs in",
+        "careers only",
+        "salary",
+        "resume",
+        "document/",
+        "pdf",
+    )
+    if any(term in text for term in blocked_terms):
+        return False
+
+    service_hits = service_variants(input_data.get("service", "") or "")
+    category_hits = category_variants(input_data.get("category", "") or "")
+    service_relevant = any(term.lower() in text for term in [input_data.get("service", ""), *service_hits] if term)
+    category = input_data.get("category", "")
+    category_relevant = category in ("Local Businesses", "Healthcare") or any(term.lower() in text for term in [category, *category_hits] if term)
+
+    country = str(input_data.get("country", "")).lower()
+    city = "" if input_data.get("city") == "All Cities" else str(input_data.get("city", "")).lower()
+    state = "" if input_data.get("state") == "All Regions" else str(input_data.get("state", "")).lower()
+    location_relevant = bool(country and country in text) or bool(city and city in text) or bool(state and state in text)
+    if location == input_data.get("country"):
+        location_relevant = location_relevant or ".com" in domain(website)
+
+    return service_relevant and category_relevant and location_relevant
 
 
 def decode_duckduckgo_url(href: str) -> str:
@@ -621,12 +684,35 @@ def clean_title(value: str) -> str:
     return re.sub(r"\s[-|].*$", "", decode_html(value)).strip() or "Unknown business"
 
 
+def clean_business_name(title: str, website: str) -> str:
+    cleaned = clean_title(title)
+    if cleaned.lower() in ("contact", "contact us", "privacy policy", "locations", "our locations"):
+        return domain_to_name(website)
+    return cleaned
+
+
+def compact_address(snippet: str, fallback: str) -> str:
+    text = decode_html(snippet)
+    if not text:
+        return fallback
+    text = re.sub(r"\s+", " ", text).strip()
+    address_markers = ("address", "location", "office", "headquarters", "hq")
+    sentences = re.split(r"(?<=[.!?])\s+| \.\.\. ", text)
+    preferred = next((sentence for sentence in sentences if any(marker in sentence.lower() for marker in address_markers)), "")
+    compact = preferred or text
+    return compact[:260].rstrip(" ,.;:-") or fallback
+
+
 def decode_html(value: str) -> str:
     return BeautifulSoup(value or "", "html.parser").get_text(" ")
 
 
 def bad_email(email: str) -> bool:
     value = email.lower()
+    host = value.split("@")[-1] if "@" in value else ""
+    tld = host.rsplit(".", 1)[-1] if "." in host else ""
+    if len(tld) < 2 or tld in {"fct", "xxx", "test", "local", "invalid"}:
+        return True
     return any(term in value for term in (".png", ".jpg", ".jpeg", ".gif", ".webp", "example.com", "domain.com", "sentry.io"))
 
 
