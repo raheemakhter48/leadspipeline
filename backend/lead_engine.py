@@ -47,14 +47,22 @@ def search_ready_leads(input_data: dict[str, Any]) -> list[dict[str, Any]]:
             "source": "target_website",
         })
     if include_web:
-        perplexity_results = search_perplexity(input_data, location, limit)
-        serper_results = search_serper(input_data, location, limit)
-        public_results = search_public_web(input_data, location, limit)
+        search_locations = expanded_search_locations(input_data, location)
+        perplexity_results = []
+        serper_results = []
+        public_results = []
+        for search_location in search_locations:
+            perplexity_results.extend(search_perplexity(input_data, search_location, limit))
+            serper_results.extend(search_serper(input_data, search_location, limit))
+            if len(search_locations) == 1:
+                public_results.extend(search_public_web(input_data, search_location, limit))
+            if len(perplexity_results) + len(serper_results) >= limit * 5:
+                break
         discovered.extend(perplexity_results)
         discovered.extend(serper_results)
         discovered.extend(public_results)
         print(
-            f"[ready-search] discovery location={location!r} service={input_data.get('service')!r} "
+            f"[ready-search] discovery location={location!r} search_locations={len(search_locations)} service={input_data.get('service')!r} "
             f"category={input_data.get('category')!r} perplexity={len(perplexity_results)} "
             f"serper={len(serper_results)} web={len(public_results)}",
             flush=True,
@@ -424,6 +432,7 @@ def service_variants(service: str) -> list[str]:
         "Cloud Services": ["cloud services provider", "cloud consulting company", "AWS Azure consultant"],
         "Web Design": ["web design company", "website design agency", "web development company"],
         "SEO Services": ["SEO agency", "local SEO company", "digital marketing agency"],
+        "Content Marketing": ["content marketing agency", "content strategy agency", "digital marketing agency", "SEO content agency"],
         "Lead Generation": ["lead generation agency", "B2B lead generation company"],
         "AI Automation": ["AI automation agency", "business automation consultant"],
         "SaaS Development": ["software development company", "SaaS development agency"],
@@ -432,6 +441,16 @@ def service_variants(service: str) -> list[str]:
         "Data Enrichment": ["data enrichment service", "B2B data provider"],
     }
     return variants.get(service, [service])
+
+
+def service_category(service: str) -> str:
+    if service in {"SEO Services", "Content Marketing", "Paid Ads", "Social Media Marketing", "Local SEO", "Reputation Management"}:
+        return "marketing"
+    if service in {"Web Design", "WordPress Development", "Shopify Development", "E-commerce Development"}:
+        return "website"
+    if service in {"IT Support", "Cybersecurity", "Cloud Services"}:
+        return "it services"
+    return service.lower()
 
 
 def osm_tags_for(category: str) -> list[str]:
@@ -590,9 +609,11 @@ def is_relevant_discovery(item: dict[str, str], input_data: dict[str, Any], loca
     if any(term in text for term in blocked_terms):
         return False
 
-    service_hits = service_variants(input_data.get("service", "") or "")
+    service = input_data.get("service", "") or ""
+    service_hits = service_variants(service)
     category_hits = category_variants(input_data.get("category", "") or "")
-    service_relevant = any(term.lower() in text for term in [input_data.get("service", ""), *service_hits] if term)
+    service_relevant = any(term.lower() in text for term in [service, *service_hits] if term)
+    service_relevant = service_relevant or service_category(service) in text
     category = input_data.get("category", "")
     category_relevant = category in ("Local Businesses", "Healthcare") or any(term.lower() in text for term in [category, *category_hits] if term)
 
@@ -603,7 +624,7 @@ def is_relevant_discovery(item: dict[str, str], input_data: dict[str, Any], loca
     if location == input_data.get("country"):
         location_relevant = location_relevant or ".com" in domain(website)
 
-    return service_relevant and category_relevant and location_relevant
+    return category_relevant and location_relevant and service_relevant
 
 
 def decode_duckduckgo_url(href: str) -> str:
@@ -622,6 +643,22 @@ def build_location(input_data: dict[str, Any]) -> str:
         input_data.get("country", ""),
     ]
     return ", ".join(part for part in parts if part)
+
+
+def expanded_search_locations(input_data: dict[str, Any], location: str) -> list[str]:
+    if input_data.get("city") != "All Cities" or input_data.get("state") != "All Regions":
+        return [location]
+
+    cities = {
+        "United States": ["Los Angeles, California, United States", "Dallas, Texas, United States", "New York, New York, United States", "Chicago, Illinois, United States", "Miami, Florida, United States"],
+        "United Kingdom": ["London, England, United Kingdom", "Manchester, England, United Kingdom", "Birmingham, England, United Kingdom"],
+        "Canada": ["Toronto, Ontario, Canada", "Vancouver, British Columbia, Canada", "Calgary, Alberta, Canada"],
+        "Australia": ["Sydney, New South Wales, Australia", "Melbourne, Victoria, Australia", "Brisbane, Queensland, Australia"],
+        "Pakistan": ["Lahore, Punjab, Pakistan", "Karachi, Sindh, Pakistan", "Islamabad, Pakistan"],
+        "India": ["Mumbai, Maharashtra, India", "Delhi, India", "Bengaluru, Karnataka, India"],
+        "United Arab Emirates": ["Dubai, United Arab Emirates", "Abu Dhabi, United Arab Emirates", "Sharjah, United Arab Emirates"],
+    }
+    return cities.get(input_data.get("country", ""), [location])
 
 
 def country_code(country: str) -> str:
