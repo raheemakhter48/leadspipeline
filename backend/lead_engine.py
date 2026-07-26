@@ -11,11 +11,15 @@ from bs4 import BeautifulSoup
 
 
 SEARCH_TIMEOUT = 8
-CRAWL_TIMEOUT = 7
+CRAWL_TIMEOUT = 4
 CRAWL_WORKERS = 8
-PERPLEXITY_TIMEOUT = 20
+DISCOVERY_CRAWL_MULTIPLIER = 2
+DISCOVERY_CRAWL_MAX = 48
+DISCOVERY_BATCH_SIZE = 16
+PROVIDER_QUERY_LIMIT = 3
+PERPLEXITY_TIMEOUT = 12
 PERPLEXITY_MAX_RESULTS = 20
-SERPER_TIMEOUT = 15
+SERPER_TIMEOUT = 10
 SERPER_MAX_RESULTS = 20
 CONTACT_PATH_HINTS = (
     "contact",
@@ -73,32 +77,54 @@ def search_ready_leads(input_data: dict[str, Any]) -> list[dict[str, Any]]:
     unique_sites = dedupe_discoveries(discovered)
     leads: list[dict[str, Any]] = []
 
-    with ThreadPoolExecutor(max_workers=CRAWL_WORKERS) as executor:
-        futures = {
-            executor.submit(build_lead, item, input_data, location, index, fetch_contacts): item
-            for index, item in enumerate(unique_sites[: min(limit * 4, 220)])
-        }
-        for future in as_completed(futures):
-            lead = future.result()
-            if not lead:
-                continue
-            if lead.get("id") in excluded_ids:
-                continue
-            if not lead.get("email"):
-                continue
-            if input_data.get("directDial") and not lead.get("phone"):
-                continue
-            leads.append(lead)
-            if len(leads) >= limit:
-                break
+    leads.extend(build_leads_from_discoveries(unique_sites, input_data, location, fetch_contacts, excluded_ids, limit, strict=True))
+    strict_count = len(leads)
+    if not leads:
+        leads.extend(build_leads_from_discoveries(unique_sites, input_data, location, fetch_contacts, excluded_ids, limit, strict=False))
 
     final_leads = sorted(leads, key=lambda lead: lead["aiScore"], reverse=True)[:limit]
     print(
-        f"[ready-search] discovered={len(discovered)} unique={len(unique_sites)} maps={len(map_results)} "
+        f"[ready-search] discovered={len(discovered)} unique={len(unique_sites)} maps={len(map_results)} strict_email_leads={strict_count} "
         f"email_leads={len(final_leads)}",
         flush=True,
     )
     return final_leads
+
+
+def build_leads_from_discoveries(
+    unique_sites: list[dict[str, str]],
+    input_data: dict[str, Any],
+    location: str,
+    fetch_contacts: bool,
+    excluded_ids: set[str],
+    limit: int,
+    strict: bool,
+) -> list[dict[str, Any]]:
+    leads: list[dict[str, Any]] = []
+    candidates = unique_sites[: min(max(limit * DISCOVERY_CRAWL_MULTIPLIER, DISCOVERY_BATCH_SIZE), DISCOVERY_CRAWL_MAX)]
+    for offset in range(0, len(candidates), DISCOVERY_BATCH_SIZE):
+        batch = candidates[offset : offset + DISCOVERY_BATCH_SIZE]
+        with ThreadPoolExecutor(max_workers=CRAWL_WORKERS) as executor:
+            futures = {
+                executor.submit(build_lead, item, input_data, location, offset + index, fetch_contacts, strict): item
+                for index, item in enumerate(batch)
+            }
+            for future in as_completed(futures):
+                lead = future.result()
+                if not lead:
+                    continue
+                if lead.get("id") in excluded_ids:
+                    continue
+                if not lead.get("email"):
+                    continue
+                if input_data.get("directDial") and not lead.get("phone"):
+                    continue
+                leads.append(lead)
+                if len(leads) >= limit:
+                    break
+        if len(leads) >= limit:
+            break
+    return leads
 
 
 def search_perplexity(input_data: dict[str, Any], location: str, limit: int) -> list[dict[str, str]]:
@@ -114,7 +140,7 @@ def search_perplexity(input_data: dict[str, Any], location: str, limit: int) -> 
         "Content-Type": "application/json",
     }
 
-    for query in build_queries(input_data, location)[:10]:
+    for query in build_queries(input_data, location)[:PROVIDER_QUERY_LIMIT]:
         payload: dict[str, Any] = {
             "query": query,
             "max_results": per_query,
@@ -156,7 +182,7 @@ def search_serper(input_data: dict[str, Any], location: str, limit: int) -> list
         "Content-Type": "application/json",
     }
 
-    for query in build_queries(input_data, location)[:10]:
+    for query in build_queries(input_data, location)[:PROVIDER_QUERY_LIMIT]:
         payload: dict[str, Any] = {
             "q": query,
             "num": per_query,
@@ -189,7 +215,7 @@ def search_serper(input_data: dict[str, Any], location: str, limit: int) -> list
 
 def search_public_web(input_data: dict[str, Any], location: str, limit: int) -> list[dict[str, str]]:
     results: list[dict[str, str]] = []
-    for query in build_queries(input_data, location)[:14]:
+    for query in build_queries(input_data, location)[:PROVIDER_QUERY_LIMIT]:
         try:
             response = requests.get(
                 "https://html.duckduckgo.com/html/",
@@ -267,9 +293,9 @@ def search_openstreetmap(input_data: dict[str, Any], location: str, limit: int) 
         return []
 
 
-def build_lead(item: dict[str, str], input_data: dict[str, Any], location: str, index: int, fetch_contacts: bool) -> dict[str, Any] | None:
+def build_lead(item: dict[str, str], input_data: dict[str, Any], location: str, index: int, fetch_contacts: bool, strict: bool = True) -> dict[str, Any] | None:
     website = normalize_url(item.get("url", ""))
-    if not is_relevant_discovery(item, input_data, location):
+    if not is_relevant_discovery(item, input_data, location, strict):
         return None
     contact = crawl_contact(website) if fetch_contacts and website else {"email": "", "phone": "", "socialLinks": []}
     phone = item.get("phone") or contact["phone"]
@@ -584,7 +610,7 @@ def is_business_url(url: str) -> bool:
     return not any(item in host for item in blocked)
 
 
-def is_relevant_discovery(item: dict[str, str], input_data: dict[str, Any], location: str) -> bool:
+def is_relevant_discovery(item: dict[str, str], input_data: dict[str, Any], location: str, strict: bool = True) -> bool:
     website = normalize_url(item.get("url", ""))
     text = f"{item.get('title', '')} {item.get('snippet', '')} {website}".lower()
     if not is_business_url(website):
@@ -608,6 +634,8 @@ def is_relevant_discovery(item: dict[str, str], input_data: dict[str, Any], loca
     )
     if any(term in text for term in blocked_terms):
         return False
+    if not strict:
+        return True
 
     service = input_data.get("service", "") or ""
     service_hits = service_variants(service)
