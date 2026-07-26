@@ -22,7 +22,7 @@ export async function POST(request: Request) {
 }
 
 async function proxyToBackend(body: { body: string; html?: string; subject: string; to: string }, userEmail: string) {
-  const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || DEFAULT_BACKEND_URL;
+  const backendUrl = normalizeBackendUrl(process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || DEFAULT_BACKEND_URL);
 
   if (!backendUrl) {
     await recordMailLog({
@@ -40,7 +40,7 @@ async function proxyToBackend(body: { body: string; html?: string; subject: stri
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 45000);
-    const response = await fetch(`${backendUrl.replace(/\/$/, "")}/mail/send`, {
+    const response = await fetch(`${backendUrl}/mail/send`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -88,6 +88,20 @@ async function proxyToBackend(body: { body: string; html?: string; subject: stri
     });
     return NextResponse.json({ error: message }, { status: 500 });
   }
+}
+
+function normalizeBackendUrl(value: string) {
+  const cleaned = value
+    .trim()
+    .replace(/^BACKEND_URL=/, "")
+    .replace(/^NEXT_PUBLIC_BACKEND_URL=/, "")
+    .replace(/^["']|["']$/g, "")
+    .replace(/\s+/g, "")
+    .replace(/\/+$/, "");
+
+  if (!cleaned) return DEFAULT_BACKEND_URL;
+  if (/^https?:\/\//i.test(cleaned)) return cleaned;
+  return `http://${cleaned}`;
 }
 
 async function recordMailLog(input: {

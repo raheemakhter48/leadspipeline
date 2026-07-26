@@ -91,6 +91,7 @@ function normalizeBackendUrl(value: string) {
     .replace(/^BACKEND_URL=/, "")
     .replace(/^NEXT_PUBLIC_BACKEND_URL=/, "")
     .replace(/^["']|["']$/g, "")
+    .replace(/\s+/g, "")
     .replace(/\/+$/, "");
 
   if (!cleaned) return DEFAULT_BACKEND_URL;
