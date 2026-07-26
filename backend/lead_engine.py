@@ -16,10 +16,10 @@ CRAWL_WORKERS = 8
 DISCOVERY_CRAWL_MULTIPLIER = 2
 DISCOVERY_CRAWL_MAX = 48
 DISCOVERY_BATCH_SIZE = 16
-PROVIDER_QUERY_LIMIT = 3
-PERPLEXITY_TIMEOUT = 12
+PROVIDER_QUERY_LIMIT = 2
+PERPLEXITY_TIMEOUT = 9
 PERPLEXITY_MAX_RESULTS = 20
-SERPER_TIMEOUT = 10
+SERPER_TIMEOUT = 8
 SERPER_MAX_RESULTS = 20
 CONTACT_PATH_HINTS = (
     "contact",
@@ -297,7 +297,9 @@ def build_lead(item: dict[str, str], input_data: dict[str, Any], location: str, 
     website = normalize_url(item.get("url", ""))
     if not is_relevant_discovery(item, input_data, location, strict):
         return None
-    contact = crawl_contact(website) if fetch_contacts and website else {"email": "", "phone": "", "socialLinks": []}
+    has_search_email = bool(item.get("email"))
+    needs_phone = bool(input_data.get("directDial")) and not item.get("phone")
+    contact = crawl_contact(website) if fetch_contacts and website and (not has_search_email or needs_phone) else {"email": "", "phone": "", "socialLinks": []}
     phone = item.get("phone") or contact["phone"]
     email = item.get("email") or contact["email"]
     score = score_lead(website=website, email=email, phone=phone, source=item.get("source", "web_search"), index=index)
@@ -678,13 +680,13 @@ def expanded_search_locations(input_data: dict[str, Any], location: str) -> list
         return [location]
 
     cities = {
-        "United States": ["Los Angeles, California, United States", "Dallas, Texas, United States", "New York, New York, United States", "Chicago, Illinois, United States", "Miami, Florida, United States"],
-        "United Kingdom": ["London, England, United Kingdom", "Manchester, England, United Kingdom", "Birmingham, England, United Kingdom"],
-        "Canada": ["Toronto, Ontario, Canada", "Vancouver, British Columbia, Canada", "Calgary, Alberta, Canada"],
-        "Australia": ["Sydney, New South Wales, Australia", "Melbourne, Victoria, Australia", "Brisbane, Queensland, Australia"],
-        "Pakistan": ["Lahore, Punjab, Pakistan", "Karachi, Sindh, Pakistan", "Islamabad, Pakistan"],
-        "India": ["Mumbai, Maharashtra, India", "Delhi, India", "Bengaluru, Karnataka, India"],
-        "United Arab Emirates": ["Dubai, United Arab Emirates", "Abu Dhabi, United Arab Emirates", "Sharjah, United Arab Emirates"],
+        "United States": ["Los Angeles, California, United States", "Dallas, Texas, United States"],
+        "United Kingdom": ["London, England, United Kingdom", "Manchester, England, United Kingdom"],
+        "Canada": ["Toronto, Ontario, Canada", "Vancouver, British Columbia, Canada"],
+        "Australia": ["Sydney, New South Wales, Australia", "Melbourne, Victoria, Australia"],
+        "Pakistan": ["Lahore, Punjab, Pakistan", "Karachi, Sindh, Pakistan"],
+        "India": ["Mumbai, Maharashtra, India", "Delhi, India"],
+        "United Arab Emirates": ["Dubai, United Arab Emirates", "Abu Dhabi, United Arab Emirates"],
     }
     return cities.get(input_data.get("country", ""), [location])
 
